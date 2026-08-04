@@ -1,0 +1,54 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* DaisyUI v5 with Tailwind v4 configuration */
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  prefersdark: true;
+  color-scheme: "light";
+  --color-primary: oklch(0.65 0.2 240);
+  --color-primary-content: oklch(0.98 0.01 240);
+  --color-secondary: oklch(0.65 0.2 320);
+  --color-secondary-content: oklch(0.98 0.01 320);
+  --color-accent: oklch(0.65 0.2 160);
+  --color-accent-content: oklch(0.98 0.01 160);
+  --color-neutral: oklch(0.2 0.01 250);
+  --color-neutral-content: oklch(0.98 0.01 250);
+  --color-base-100: oklch(1 0 0);
+  --color-base-200: oklch(0.95 0.01 240);
+  --color-base-300: oklch(0.9 0.01 240);
+  --color-base-content: oklch(0.2 0.01 240);
+  --color-info: oklch(0.6 0.2 240);
+  --color-info-content: oklch(0.98 0.01 240);
+  --color-success: oklch(0.6 0.2 140);
+  --color-success-content: oklch(0.98 0.01 140);
+  --color-warning: oklch(0.6 0.2 80);
+  --color-warning-content: oklch(0.98 0.01 80);
+  --color-error: oklch(0.6 0.2 20);
+  --color-error-content: oklch(0.98 0.01 20);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+}
+
+/* Custom styles */
+body {
+  min-height: 100vh;
+  margin: 0;
+}
+
+/* Safe area padding for mobile */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Disable text selection on mobile for better UX */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
