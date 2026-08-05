@@ -29,7 +29,8 @@ class AuthState {
     'Legal Information System Administrator': '/admin/lis/dashboard',
     'Legal Services Administrator': '/admin/legal-services/dashboard',
     'Child Protection Coordinator': '/admin/child-protection/dashboard',
-    'School Site Titling Coordinator': '/admin/site-titling/dashboard'
+    'School Site Titling Coordinator': '/admin/site-titling/dashboard',
+    'Learner Right Protection Focal Person': '/admin/lrp/intake-sheets'
   };
 
   // URL prefixes each role is allowed to navigate to.
@@ -40,7 +41,8 @@ class AuthState {
     'Legal Information System Administrator': ['/admin/lis/'],
     'Legal Services Administrator': ['/admin/legal-services/'],
     'Child Protection Coordinator': ['/admin/child-protection/'],
-    'School Site Titling Coordinator': ['/admin/site-titling/']
+    'School Site Titling Coordinator': ['/admin/site-titling/'],
+    'Learner Right Protection Focal Person': ['/admin/lrp/']
   };
 
   // Display names
@@ -49,7 +51,8 @@ class AuthState {
     'Legal Information System Administrator': 'LIS Dashboard',
     'Legal Services Administrator': 'Administrative Cases',
     'Child Protection Coordinator': 'Child Protection',
-    'School Site Titling Coordinator': 'Site Titling'
+    'School Site Titling Coordinator': 'Site Titling',
+    'Learner Right Protection Focal Person': 'Intake Sheets'
   };
 
   // Permissions definition
@@ -65,7 +68,8 @@ class AuthState {
         'Legal Information System Administrator',
         'Legal Services Administrator',
         'Child Protection Coordinator',
-        'School Site Titling Coordinator'
+        'School Site Titling Coordinator',
+        'Learner Right Protection Focal Person'
       ],
       menuItems: [
         { name: 'Super Admin', role: 'Super Admin', path: '/admin/super-admin/dashboard', icon: 'shield' },
@@ -73,6 +77,7 @@ class AuthState {
         { name: 'Certificates', path: '/admin/legal-services/certificates', icon: 'certificate' },
         { name: 'Child Protection', role: 'Child Protection Coordinator', path: '/admin/child-protection/dashboard', icon: 'heart' },
         { name: 'Site Titling', role: 'School Site Titling Coordinator', path: '/admin/site-titling/dashboard', icon: 'building' },
+        { name: 'Intake Sheets', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
         { name: 'User Management', path: '/admin/super-admin/users', icon: 'users' },
         { name: 'Audit Logs', path: '/admin/super-admin/logs', icon: 'clipboard' },
         // { name: 'Settings', path: '/admin/super-admin/settings', icon: 'cog' }
@@ -123,6 +128,19 @@ class AuthState {
       accessibleDashboards: ['School Site Titling Coordinator'],
       menuItems: [
         { name: 'Site Titling', role: 'School Site Titling Coordinator', path: '/admin/site-titling/dashboard', icon: 'building' }
+      ]
+    },
+    'Learner Right Protection Focal Person': {
+      canAccessAllDashboards: false,
+      canManageUsers: false,
+      canViewAuditLogs: false,
+      canManageSettings: false,
+      // Regional-level (no division_id) vs division-level is resolved server-side
+      // per request; 'division' here is just the conservative default for UI copy.
+      scope: 'division',
+      accessibleDashboards: ['Learner Right Protection Focal Person'],
+      menuItems: [
+        { name: 'Intake Sheets', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' }
       ]
     }
   };
@@ -422,6 +440,19 @@ class AuthState {
     return this.hasPermission('manage_titling_applications') || this.hasPermission('view_titling_applications');
   }
   canManageTitling() { return this.hasPermission('manage_titling_applications'); }
+
+  // ── Learner Rights & Protection Intake Sheets ────────────────────────────
+  // Focal Person has full CRUD (scoped server-side to their division unless
+  // regional-level); Super Admin can view every intake sheet but not write.
+  canViewIntakeSheets() {
+    return this.hasRole('Learner Right Protection Focal Person') || this.hasRole('Super Admin');
+  }
+  canManageIntakeSheets() {
+    return this.hasRole('Learner Right Protection Focal Person');
+  }
+  isIntakeSheetsReadOnly() {
+    return this.hasRole('Super Admin') && !this.hasRole('Learner Right Protection Focal Person');
+  }
 }
 
 export const authState = new AuthState();
