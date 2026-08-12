@@ -30,7 +30,7 @@ class AuthState {
     'Legal Services Administrator': '/admin/legal-services/dashboard',
     'Child Protection Coordinator': '/admin/child-protection/dashboard',
     'School Site Titling Coordinator': '/admin/site-titling/dashboard',
-    'Learner Right Protection Focal Person': '/admin/lrp/intake-sheets'
+    'Learner Right Protection Focal Person': '/admin/lrp/dashboard'
   };
 
   // URL prefixes each role is allowed to navigate to.
@@ -42,6 +42,9 @@ class AuthState {
     'Legal Services Administrator': ['/admin/legal-services/'],
     'Child Protection Coordinator': ['/admin/child-protection/'],
     'School Site Titling Coordinator': ['/admin/site-titling/'],
+    // Covers school/division/regional-level Focal Persons alike — scope
+    // within this section is resolved server-side from the account's own
+    // school_id/division_id, not by a separate frontend role.
     'Learner Right Protection Focal Person': ['/admin/lrp/']
   };
 
@@ -52,7 +55,7 @@ class AuthState {
     'Legal Services Administrator': 'Administrative Cases',
     'Child Protection Coordinator': 'Child Protection',
     'School Site Titling Coordinator': 'Site Titling',
-    'Learner Right Protection Focal Person': 'Intake Sheets'
+    'Learner Right Protection Focal Person': 'LRP Dashboard'
   };
 
   // Permissions definition
@@ -77,7 +80,9 @@ class AuthState {
         { name: 'Certificates', path: '/admin/legal-services/certificates', icon: 'certificate' },
         { name: 'Child Protection', role: 'Child Protection Coordinator', path: '/admin/child-protection/dashboard', icon: 'heart' },
         { name: 'Site Titling', role: 'School Site Titling Coordinator', path: '/admin/site-titling/dashboard', icon: 'building' },
-        { name: 'Intake Sheets', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
+        { name: 'LRP Dashboard', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/dashboard', icon: 'clipboard-list' },
+        { name: 'Intake Sheets', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
+        { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' },
         { name: 'User Management', path: '/admin/super-admin/users', icon: 'users' },
         { name: 'Audit Logs', path: '/admin/super-admin/logs', icon: 'clipboard' },
         // { name: 'Settings', path: '/admin/super-admin/settings', icon: 'cog' }
@@ -135,12 +140,17 @@ class AuthState {
       canManageUsers: false,
       canViewAuditLogs: false,
       canManageSettings: false,
-      // Regional-level (no division_id) vs division-level is resolved server-side
-      // per request; 'division' here is just the conservative default for UI copy.
+      // One role covers school/division/regional level alike — actual scope is
+      // resolved server-side from the account's own school_id/division_id
+      // (school_id set → school-level, e.g. a designated guidance counselor;
+      // division_id only → division-level; neither → regional). 'division' here
+      // is just the conservative default for UI copy before /me resolves it.
       scope: 'division',
       accessibleDashboards: ['Learner Right Protection Focal Person'],
       menuItems: [
-        { name: 'Intake Sheets', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' }
+        { name: 'Dashboard', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/dashboard', icon: 'dashboard' },
+        { name: 'Intake Sheets', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
+        { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' }
       ]
     }
   };
@@ -451,6 +461,23 @@ class AuthState {
     return this.hasRole('Learner Right Protection Focal Person');
   }
   isIntakeSheetsReadOnly() {
+    return this.hasRole('Super Admin') && !this.hasRole('Learner Right Protection Focal Person');
+  }
+
+  // ── Learner Reports (the public report form's submissions) ──────────────
+  // Focal Person: view + triage + link to an intake sheet, scoped server-side
+  // to their own school (if assigned), else division, else everywhere.
+  // Super Admin: view only, everywhere.
+  canViewLearnerReports() {
+    return this.hasRole('Learner Right Protection Focal Person') || this.hasRole('Super Admin');
+  }
+  canTriageLearnerReports() {
+    return this.hasRole('Learner Right Protection Focal Person');
+  }
+  canLinkLearnerReports() {
+    return this.hasRole('Learner Right Protection Focal Person');
+  }
+  isLearnerReportsReadOnly() {
     return this.hasRole('Super Admin') && !this.hasRole('Learner Right Protection Focal Person');
   }
 }

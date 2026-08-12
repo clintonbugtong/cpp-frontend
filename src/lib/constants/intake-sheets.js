@@ -13,3 +13,25 @@ export const NATURE_OF_CASE_OPTIONS = [
 export function natureOfCaseLabel(value) {
 	return NATURE_OF_CASE_OPTIONS.find((o) => o.value === value)?.label || '—';
 }
+
+// draft → pending_review → reviewed (see IntakeSheet::getStatusAttribute on the backend).
+export const STATUS_OPTIONS = [
+	{ value: 'draft', label: 'Draft' },
+	{ value: 'pending_review', label: 'Pending Review' },
+	{ value: 'reviewed', label: 'Reviewed' }
+];
+
+/** @param {string|null|undefined} value */
+export function statusLabel(value) {
+	return STATUS_OPTIONS.find((o) => o.value === value)?.label || value || '—';
+}
+
+/** @param {string|null|undefined} value */
+export function statusBadgeClass(value) {
+	switch (value) {
+		case 'draft': return 'badge-ghost';
+		case 'pending_review': return 'badge-warning';
+		case 'reviewed': return 'badge-success';
+		default: return 'badge-ghost';
+	}
+}

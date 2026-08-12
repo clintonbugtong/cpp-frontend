@@ -1,6 +1,15 @@
 import { api } from './client.js';
 
 class IntakeSheetsService {
+	async getStatistics(params = {}) {
+		try {
+			const response = await api.get('/intake-sheets/statistics', params);
+			return { success: true, data: response };
+		} catch (err) {
+			return { success: false, error: err.message };
+		}
+	}
+
 	async getIntakeSheets(params = {}) {
 		try {
 			const response = await api.get('/intake-sheets', params);
@@ -70,6 +79,16 @@ class IntakeSheetsService {
 			return { success: true, data: response };
 		} catch (err) {
 			return { success: false, error: err.message };
+		}
+	}
+
+	/** Marks a draft complete — requires exactly one Learner-Victim to already be saved. */
+	async finalizeIntakeSheet(id) {
+		try {
+			const response = await api.post(`/intake-sheets/${id}/finalize`);
+			return { success: true, data: response };
+		} catch (err) {
+			return { success: false, error: err.message, validationErrors: err.validationErrors };
 		}
 	}
 }

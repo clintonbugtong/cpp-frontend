@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import { intakeSheetsService } from '$lib/api/intake-sheets.js';
   import { authState } from '$lib/stores/auth.svelte.js';
-  import { natureOfCaseLabel } from '$lib/constants/intake-sheets.js';
+  import { natureOfCaseLabel, statusLabel, statusBadgeClass } from '$lib/constants/intake-sheets.js';
 
   const id = page.params.id;
 
@@ -87,19 +87,30 @@
           {natureOfCaseLabel(sheet.nature_of_case)}{#if sheet.nature_of_case === 'OTHERS' && sheet.nature_of_case_other}: {sheet.nature_of_case_other}{/if}
         </span>
       </div>
-      <div class="flex items-center gap-2">
-        <span class="badge {sheet.status === 'reviewed' ? 'badge-success' : 'badge-warning'}">
-          {sheet.status === 'reviewed' ? 'Reviewed' : 'Pending Review'}
-        </span>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="badge {statusBadgeClass(sheet.status)}">{statusLabel(sheet.status)}</span>
         {#if authState.canManageIntakeSheets()}
-          <button class="btn btn-outline btn-sm" disabled={reviewing} onclick={toggleReview}>
-            {sheet.status === 'reviewed' ? 'Mark Unreviewed' : 'Mark Reviewed'}
+          {#if !sheet.is_draft}
+            <button class="btn btn-outline btn-sm" disabled={reviewing} onclick={toggleReview}>
+              {sheet.status === 'reviewed' ? 'Mark Unreviewed' : 'Mark Reviewed'}
+            </button>
+          {/if}
+          <button class="btn btn-outline btn-sm" onclick={() => goto(`/admin/lrp/intake-sheets/${id}/edit`)}>
+            {sheet.is_draft ? 'Continue Editing' : 'Edit'}
           </button>
-          <button class="btn btn-outline btn-sm" onclick={() => goto(`/admin/lrp/intake-sheets/${id}/edit`)}>Edit</button>
           <button class="btn btn-outline btn-error btn-sm" onclick={() => deleteModal?.showModal()}>Delete</button>
         {/if}
       </div>
     </div>
+
+    {#if sheet.is_draft && authState.canManageIntakeSheets()}
+      <div class="alert bg-base-200/60 border border-base-300 text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+        </svg>
+        <span>This intake sheet is still a draft — some sections may be incomplete. It won't show up as a reviewable case until it's finalized.</span>
+      </div>
+    {/if}
 
     {#if error}
       <div class="alert alert-error text-sm"><span>{error}</span></div>
@@ -115,7 +126,29 @@
 
     <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
       <h2 class="font-semibold text-lg mb-3">People Involved</h2>
-      <div class="overflow-x-auto">
+
+      <!-- Mobile: card list -->
+      <div class="sm:hidden space-y-3">
+        {#each sheet.persons || [] as p}
+          <div class="border border-base-200 rounded-lg p-3">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-medium text-sm">{fullName(p)}</span>
+              <span class="badge badge-sm badge-ghost shrink-0">{ROLE_LABELS[p.role] || p.role}</span>
+            </div>
+            <p class="text-xs text-base-content/60 mt-1">
+              {#if p.role === 'LEARNER-VICTIM'}
+                {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
+              {:else}
+                {p.relation_to_learner_victim || p.occupation || ''}
+              {/if}
+              {#if p.contact_number} · {p.contact_number}{/if}
+            </p>
+          </div>
+        {/each}
+      </div>
+
+      <!-- Tablet/desktop: table -->
+      <div class="hidden sm:block overflow-x-auto">
         <table class="table table-sm">
           <thead><tr><th>Role</th><th>Name</th><th>Details</th><th>Contact</th></tr></thead>
           <tbody>

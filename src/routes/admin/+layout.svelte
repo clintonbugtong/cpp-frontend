@@ -42,7 +42,8 @@
     '/admin/legal-services/dashboard',
     '/admin/child-protection/dashboard',
     '/admin/site-titling/dashboard',
-    '/admin/lrp/intake-sheets',
+    '/admin/lrp/dashboard',
+    '/admin/lrp/reports',
     '/admin/dashboard'
   ];
 
@@ -88,6 +89,10 @@
     '/admin/legal-services/certificates/list': 'All Certificates',
     '/admin/child-protection/dashboard': 'Child Protection',
     '/admin/site-titling/dashboard': 'Site Titling',
+    '/admin/lrp/dashboard': 'LRP Dashboard',
+    '/admin/lrp/intake-sheets': 'Intake Sheets',
+    '/admin/lrp/intake-sheets/new': 'New Intake Sheet',
+    '/admin/lrp/reports': 'Learner Reports',
     '/admin/profile': 'My Profile',
     '/admin/dashboard': 'Dashboard'
   };
@@ -100,6 +105,12 @@
       currentRole = 'Edit Case';
     } else if (path.match(/\/legal-services\/cases\/.+/)) {
       currentRole = 'Case Details';
+    } else if (path.match(/\/lrp\/intake-sheets\/.+\/edit/)) {
+      currentRole = 'Edit Intake Sheet';
+    } else if (path.match(/\/lrp\/intake-sheets\/.+/)) {
+      currentRole = 'Intake Sheet Details';
+    } else if (path.match(/\/lrp\/reports\/.+/)) {
+      currentRole = 'Learner Report Details';
     } else if (path.includes('/super-admin')) {
       currentRole = 'Super Admin';
     } else if (path.includes('/lis')) {
@@ -110,6 +121,8 @@
       currentRole = 'Child Protection';
     } else if (path.includes('/site-titling')) {
       currentRole = 'Site Titling';
+    } else if (path.includes('/lrp')) {
+      currentRole = 'LRP Dashboard';
     } else {
       currentRole = 'Dashboard';
     }
@@ -284,7 +297,7 @@
         </div>
       </header>
 
-      <main class="flex-1 p-6 lg:p-8 max-w-7xl mx-auto w-full">
+      <main class="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full safe-area-bottom">
         {@render children()}
       </main>
     </div>

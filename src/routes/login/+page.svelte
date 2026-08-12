@@ -54,96 +54,80 @@
   }
 </script>
 
-<div class="min-h-screen flex flex-col items-center justify-center px-5 py-8"
-     style="background: linear-gradient(160deg,#0F172A 0%,#1E3A8A 70%,#1E40AF 100%);">
+<div class="min-h-screen relative flex flex-col items-center justify-center px-5 py-8 overflow-hidden"
+     style="background: linear-gradient(160deg,#ECFEFF 0%,#E0F2FE 45%,#FEF3E2 100%);">
+
+  <!-- Soft decorative blobs -->
+  <div class="pointer-events-none absolute -top-24 -left-20 w-72 h-72 rounded-full opacity-40 blur-3xl" style="background:#5EEAD4;"></div>
+  <div class="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full opacity-40 blur-3xl" style="background:#FDBA74;"></div>
+  <div class="pointer-events-none absolute top-1/3 -right-10 w-52 h-52 rounded-full opacity-30 blur-3xl" style="background:#93C5FD;"></div>
 
   <!-- Card -->
-  <div class="w-full max-w-xs rounded-2xl overflow-hidden shadow-2xl">
+  <div class="relative w-full max-w-xs rounded-3xl overflow-hidden shadow-2xl">
 
     <!-- ── Branded header ── -->
     <div class="px-6 pt-8 pb-6 text-center"
-         style="background:linear-gradient(175deg,#0F172A 0%,#1e2f6e 100%);">
+         style="background:linear-gradient(165deg,#0D9488 0%,#0891B2 55%,#0EA5E9 100%);">
 
-      <!-- Logo -->
+      <!-- Logo: shield cradling a child — protection, kept simple and geometric -->
       <div class="w-20 h-20 mx-auto mb-4">
         <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full drop-shadow-lg">
           <defs>
-            <radialGradient id="lbg" cx="50%" cy="35%" r="68%">
-              <stop offset="0%" stop-color="#1E3A8A"/>
-              <stop offset="100%" stop-color="#080E1C"/>
-            </radialGradient>
-            <linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stop-color="#FEF08A"/>
-              <stop offset="40%"  stop-color="#F59E0B"/>
-              <stop offset="100%" stop-color="#78350F"/>
+            <linearGradient id="shieldFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"  stop-color="#FFFFFF"/>
+              <stop offset="100%" stop-color="#E0F2FE"/>
             </linearGradient>
-            <linearGradient id="lgH" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%"   stop-color="#FEF08A"/>
-              <stop offset="50%"  stop-color="#F59E0B"/>
-              <stop offset="100%" stop-color="#FEF08A"/>
+            <linearGradient id="armFill" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"  stop-color="#0D9488"/>
+              <stop offset="100%" stop-color="#0EA5E9"/>
             </linearGradient>
-            <radialGradient id="ls" cx="42%" cy="28%" r="52%">
-              <stop offset="0%" stop-color="#93C5FD" stop-opacity="0.2"/>
+            <linearGradient id="childFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"  stop-color="#FDBA74"/>
+              <stop offset="100%" stop-color="#FB7185"/>
+            </linearGradient>
+            <radialGradient id="glow" cx="50%" cy="40%" r="60%">
+              <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
               <stop offset="100%" stop-color="transparent"/>
             </radialGradient>
-            <radialGradient id="lpan" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stop-color="#FEF9C3" stop-opacity="0.18"/>
-              <stop offset="100%" stop-color="transparent"/>
-            </radialGradient>
-            <clipPath id="lcc"><circle cx="50" cy="50" r="43"/></clipPath>
           </defs>
-          <circle cx="50" cy="50" r="50"   fill="url(#lg)"/>
-          <circle cx="50" cy="50" r="45.8" fill="#060C18"/>
-          <circle cx="50" cy="50" r="44.4" stroke="#F59E0B" stroke-width="0.7" fill="none"/>
-          <circle cx="50" cy="50" r="43"   fill="url(#lbg)"/>
-          <circle cx="50" cy="50" r="43"   fill="url(#ls)"/>
-          <g clip-path="url(#lcc)" stroke="white" stroke-width="0.4" opacity="0.07">
-            <line x1="50" y1="7" x2="50" y2="93"/>
-            <line x1="50" y1="7" x2="50" y2="93" transform="rotate(22.5 50 50)"/>
-            <line x1="50" y1="7" x2="50" y2="93" transform="rotate(45 50 50)"/>
-            <line x1="50" y1="7" x2="50" y2="93" transform="rotate(67.5 50 50)"/>
-          </g>
-          <circle cx="50"   cy="6.5"  r="2" fill="#FEF08A"/>
-          <circle cx="93.5" cy="50"   r="2" fill="#FEF08A"/>
-          <circle cx="50"   cy="93.5" r="2" fill="#FEF08A"/>
-          <circle cx="6.5"  cy="50"   r="2" fill="#FEF08A"/>
-          <ellipse cx="50" cy="34" rx="1.8" ry="7"   fill="url(#lg)"/>
-          <ellipse cx="50" cy="34" rx="7"   ry="1.8" fill="url(#lgH)"/>
-          <circle  cx="50" cy="34" r="3.5"  fill="url(#lg)"/>
-          <circle  cx="50" cy="34" r="1.8"  fill="#FEFCE8"/>
-          <rect x="13" y="32.2" width="74" height="3.5" rx="1.75" fill="white"/>
-          <rect x="19.5" y="35.7" width="2" height="17" rx="1" fill="white" opacity="0.82"/>
-          <rect x="78.5" y="35.7" width="2" height="17" rx="1" fill="white" opacity="0.82"/>
-          <path d="M10 52.7 Q20.5 68 31 52.7 Z"           fill="url(#lpan)"/>
-          <path d="M10 52.7 Q20.5 68 31 52.7"  stroke="white" stroke-width="2.8" stroke-linecap="round"/>
-          <path d="M69 52.7 Q79.5 68 90 52.7 Z"            fill="url(#lpan)"/>
-          <path d="M69 52.7 Q79.5 68 90 52.7"  stroke="white" stroke-width="2.8" stroke-linecap="round"/>
-          <rect x="47.5" y="35.7" width="5" height="29" rx="2.5" fill="url(#lg)"/>
-          <polygon points="50,36 52.5,40.5 50,45 47.5,40.5" fill="#FEF9C3" opacity="0.75"/>
-          <rect x="33" y="63.5" width="34" height="5.2" rx="2.6" fill="url(#lg)"/>
-          <rect x="27" y="67.5" width="46" height="3.8" rx="1.9" fill="url(#lg)" opacity="0.65"/>
+
+          <!-- outer glow -->
+          <circle cx="50" cy="50" r="48" fill="url(#glow)"/>
+
+          <!-- shield: light fill so it reads clearly against the teal header behind it -->
+          <path d="M50 4 L84 17 V46 C84 70 69 87 50 96 C31 87 16 70 16 46 V17 Z" fill="url(#shieldFill)"/>
+          <path d="M50 4 L84 17 V46 C84 70 69 87 50 96 C31 87 16 70 16 46 V17 Z"
+                fill="none" stroke="#0D9488" stroke-opacity="0.3" stroke-width="1.5"/>
+
+          <!-- cradling arcs: two arms sheltering the figure below -->
+          <path d="M27 51 C27 76 73 76 73 51" fill="none" stroke="url(#armFill)" stroke-opacity="0.35" stroke-width="4.5" stroke-linecap="round"/>
+          <path d="M35 57 C35 72 65 72 65 57" fill="none" stroke="url(#armFill)" stroke-width="6" stroke-linecap="round"/>
+
+          <!-- the child, in warm contrast to the cool arms -->
+          <circle cx="50" cy="35" r="6.5" fill="url(#childFill)"/>
+          <path d="M37 63 C37 50 41 45 50 45 C59 45 63 50 63 63 Z" fill="url(#childFill)"/>
         </svg>
       </div>
 
-      <!-- Version pill -->
+      <!-- Tagline pill -->
       <div class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 mb-3"
-           style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-        <span class="text-white/65 text-xs tracking-wide">Version 4</span>
+           style="background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.22);">
+        <span class="w-1.5 h-1.5 rounded-full bg-rose-300"></span>
+        <span class="text-white/85 text-xs tracking-wide">Safe spaces for every learner</span>
       </div>
 
       <!-- System name -->
       <h1 class="text-white font-bold text-base leading-snug">
-        Legal Services<br>Information System
+        Learner Rights<br>&amp; Protection
       </h1>
-      <p class="text-blue-200/60 text-xs mt-1.5 tracking-wide">Department of Education</p>
-      <p class="text-blue-300/40 text-xs tracking-wider">Cordillera Administrative Region</p>
+      <p class="text-cyan-50/80 text-xs mt-1.5 tracking-wide">Department of Education</p>
+      <p class="text-cyan-50/60 text-xs tracking-wider">Cordillera Administrative Region</p>
 
       <!-- Divider -->
       <div class="flex items-center gap-2 mt-5">
-        <div class="flex-1 h-px bg-gradient-to-r from-transparent to-white/10"></div>
-        <div class="w-1 h-1 rounded-full bg-amber-400/50"></div>
-        <div class="flex-1 h-px bg-gradient-to-l from-transparent to-white/10"></div>
+        <div class="flex-1 h-px bg-gradient-to-r from-transparent to-white/20"></div>
+        <div class="w-1.5 h-1.5 rounded-full bg-rose-200/70"></div>
+        <div class="flex-1 h-px bg-gradient-to-l from-transparent to-white/20"></div>
       </div>
     </div>
 
@@ -213,7 +197,8 @@
 
       {:else}
 
-        <p class="text-base-content/50 text-xs mb-5 text-center tracking-wide uppercase">Sign in to your account</p>
+        <p class="text-base-content font-semibold text-sm text-center">Welcome back</p>
+        <p class="text-base-content/50 text-xs mb-5 text-center">Sign in to continue keeping our learners safe</p>
 
         {#if sessionExpiredMsg}
           <div class="alert alert-warning py-2 mb-4 text-xs">
@@ -299,7 +284,13 @@
 
       {/if}
 
-      <p class="text-center text-xs text-base-content/25 mt-6">
+      <p class="text-center text-xs text-base-content/40 mt-6 flex items-center justify-center gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-3 h-3 text-rose-400">
+          <path d="M12 21s-7.5-4.6-10.1-9.1C.3 8.8 1.6 5 5.2 4.2c2-.5 4 .3 5.1 2 .3.4.9.4 1.2 0 1.1-1.7 3.1-2.5 5.1-2 3.6.8 4.9 4.6 3.3 7.7C19.5 16.4 12 21 12 21z"/>
+        </svg>
+        Every learner has the right to feel safe
+      </p>
+      <p class="text-center text-xs text-base-content/25 mt-1">
         © 2026 DepEd — Cordillera Administrative Region
       </p>
     </div>

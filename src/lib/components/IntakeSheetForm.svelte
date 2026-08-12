@@ -1,13 +1,28 @@
 <script>
   import { goto } from '$app/navigation';
   import { intakeSheetsService } from '$lib/api/intake-sheets.js';
+  import { learnerReportsService } from '$lib/api/learner-reports.js';
   import { authState } from '$lib/stores/auth.svelte.js';
   import { api } from '$lib/api/client.js';
   import { NATURE_OF_CASE_OPTIONS } from '$lib/constants/intake-sheets.js';
+  import { relationshipLabel } from '$lib/constants/learner-reports.js';
 
-  /** @type {{ intakeSheetId?: number|string|null }} */
-  let { intakeSheetId = null } = $props();
+  /** @type {{ intakeSheetId?: number|string|null, fromReportId?: number|string|null }} */
+  let { intakeSheetId = null, fromReportId = null } = $props();
   let isEdit = $derived(!!intakeSheetId);
+  let isFromReport = $derived(!isEdit && !!fromReportId);
+
+  // The backend record ID once one exists — null until Step 1 is first saved
+  // for a brand-new sheet, already known immediately when editing.
+  let sheetId = $state(intakeSheetId ? Number(intakeSheetId) : null);
+  // Whether this record is still a draft (data saved progressively, not yet
+  // finalized). Always true for a fresh sheet; for an existing one it's
+  // whatever loadExisting() finds. While it's true, each "Next" click persists
+  // that step's section to the backend instead of just holding it in memory —
+  // that's what makes the wizard "gradual": walking away mid-way leaves a
+  // resumable draft instead of losing everything.
+  let loadedIsDraft = $state(true);
+  let isDraftFlow = $derived(!isEdit || loadedIsDraft);
 
   const STEPS = [
     { n: 1, label: 'Intake Info' },
@@ -18,11 +33,14 @@
   ];
   let currentStep = $state(1);
 
-  let loading = $state(isEdit);
+  let loading = $state(isEdit || isFromReport);
   let submitting = $state(false);
   let submitError = $state('');
   /** @type {Record<string,string[]>} */
   let submitValidationErrors = $state({});
+  /** Set once loadFromReport() succeeds — used for the "prefilled from" banner. */
+  /** @type {any} */
+  let sourceReport = $state(null);
 
   // ── Step 1: Intake info ──────────────────────────────────────────────────
   const isRegional = authState.user?.organizationLevel === 'regional';
@@ -80,7 +98,62 @@
       api.get('/divisions/all').then((res) => { divisions = res.data || []; }).catch(() => { divisions = []; });
     }
     if (isEdit) loadExisting();
+    else if (isFromReport) loadFromReport();
   });
+
+  /**
+   * Prefills the form from an already-submitted learner report instead of
+   * starting blank — the whole point of the report form is to hand the Focal
+   * Person a head start, not busywork re-typing what's already known.
+   */
+  async function loadFromReport() {
+    loading = true;
+    const result = await learnerReportsService.getReport(fromReportId);
+    if (!result.success) {
+      submitError = result.error || 'Failed to load the source report';
+      loading = false;
+      return;
+    }
+    const r = result.data;
+    sourceReport = r;
+
+    header.division_id = String(r.division_id);
+    header.school_id = String(r.school_id);
+    header.nature_of_case = r.nature_of_concern || '';
+    header.nature_of_case_other = r.nature_of_concern_other || '';
+    selectedSchool = r.school ? { school_id: r.school_id, name: r.school.name } : null;
+    schoolQuery = r.school?.name || '';
+
+    // Grade/section always describe the learner, regardless of who reported.
+    learner.grade = r.reporter_grade || '';
+    learner.section = r.reporter_section || '';
+
+    if (r.reporter_relationship === 'STUDENT') {
+      // The reporter *is* the learner-victim — carry their name/contact over directly.
+      learner.first_name = r.reporter_first_name || '';
+      learner.last_name = r.reporter_last_name || '';
+      learner.contact_number = r.reporter_contact_number || '';
+    } else if (r.reporter_first_name || r.reporter_last_name) {
+      // A parent/guardian/other reported on the learner's behalf — we don't know
+      // the learner's own name, so leave that blank for the Focal Person to fill
+      // in, and add the reporter as a Complainant instead (not Mother/Father —
+      // "Parent" doesn't tell us which, and guessing risks misgendering them).
+      complainants = [{
+        ...emptyPerson(),
+        first_name: r.reporter_first_name || '',
+        last_name: r.reporter_last_name || '',
+        contact_number: r.reporter_contact_number || '',
+        relation_to_learner_victim: relationshipLabel(r.reporter_relationship)
+      }];
+    }
+
+    // The report form doesn't ask when the incident happened, only what was
+    // reported — carry the description over, leave the date for the Focal
+    // Person to fill in after following up.
+    incidents = [{ date_of_incident: '', is_estimated_date: false, description: r.description || '' }];
+
+    loading = false;
+  }
 
   async function loadExisting() {
     loading = true;
@@ -91,6 +164,8 @@
       return;
     }
     const data = result.data;
+    sheetId = data.intake_sheet_id;
+    loadedIsDraft = !!data.is_draft;
 
     header = {
       division_id: String(data.division_id),
@@ -213,14 +288,68 @@
     return '';
   }
 
-  function next() {
+  /**
+   * Persists the step being left before advancing — the section reaches the
+   * backend as soon as it's confirmed complete, not just once at the very end.
+   * Only called while isDraftFlow (a brand-new sheet, or resuming an existing
+   * draft); editing an already-finalized sheet skips this and saves everything
+   * together on final submit, same as before.
+   */
+  async function saveCurrentStep() {
+    if (currentStep === 1) {
+      const payload = {
+        division_id: Number(header.division_id),
+        school_id: Number(header.school_id),
+        date_of_intake: header.date_of_intake,
+        nature_of_case: header.nature_of_case,
+        nature_of_case_other: header.nature_of_case === 'OTHERS' ? header.nature_of_case_other : null
+      };
+      const result = sheetId
+        ? await intakeSheetsService.updateIntakeSheet(sheetId, payload)
+        : await intakeSheetsService.createIntakeSheet(payload);
+      if (result.success && !sheetId) sheetId = result.data.intake_sheet_id;
+      return result;
+    }
+    if (currentStep === 2) {
+      return intakeSheetsService.updateIntakeSheet(sheetId, { persons: buildPersons() });
+    }
+    if (currentStep === 3) {
+      return intakeSheetsService.updateIntakeSheet(sheetId, {
+        detailed_incidents: incidents.filter((i) => i.date_of_incident || i.description)
+      });
+    }
+    if (currentStep === 4) {
+      return intakeSheetsService.updateIntakeSheet(sheetId, {
+        actions_taken: actions.filter((a) => a.action_taken.trim()),
+        recommendations: recommendations.filter((r) => r.recommendation.trim()),
+        referrals: referrals.filter((r) => r.referred_to.trim() || r.reason.trim())
+      });
+    }
+    return { success: true };
+  }
+
+  async function next() {
     const err = stepError(currentStep);
     if (err) { submitError = err; return; }
     submitError = '';
+    submitValidationErrors = {};
+
+    if (isDraftFlow) {
+      submitting = true;
+      const result = await saveCurrentStep();
+      submitting = false;
+      if (!result.success) {
+        submitError = result.error || 'Failed to save this step';
+        submitValidationErrors = result.validationErrors || {};
+        return;
+      }
+    }
+
     currentStep = Math.min(currentStep + 1, STEPS.length);
   }
   function back() {
     submitError = '';
+    submitValidationErrors = {};
     currentStep = Math.max(currentStep - 1, 1);
   }
   /** @param {number} n */
@@ -264,17 +393,34 @@
     submitError = '';
     submitValidationErrors = {};
 
-    const payload = buildPayload();
-    const result = isEdit
-      ? await intakeSheetsService.updateIntakeSheet(intakeSheetId, payload)
-      : await intakeSheetsService.createIntakeSheet(payload);
+    // In the draft flow, every section was already persisted step-by-step on
+    // the way here (see saveCurrentStep()) — all that's left is flipping the
+    // record from draft to complete. Editing an already-finalized sheet still
+    // saves everything together in one PUT, same as before.
+    const result = isDraftFlow
+      ? await intakeSheetsService.finalizeIntakeSheet(sheetId)
+      : await intakeSheetsService.updateIntakeSheet(intakeSheetId, buildPayload());
 
     if (result.success) {
-      goto(`/admin/lrp/intake-sheets/${result.data.intake_sheet_id}`);
+      const newId = isDraftFlow ? sheetId : intakeSheetId;
+
+      if (isFromReport) {
+        const linkResult = await learnerReportsService.linkReport(fromReportId, newId);
+        if (!linkResult.success) {
+          // The sheet itself was finalized fine — don't lose that. Just surface
+          // the link failure and let them finish it manually from the report's page.
+          submitError = `Intake sheet #${newId} was finalized, but linking report #${fromReportId} to it failed: ${linkResult.error}. You can link it manually from the report's page.`;
+          submitting = false;
+          return;
+        }
+      }
+
+      goto(`/admin/lrp/intake-sheets/${newId}`);
     } else {
       submitError = result.error || 'Failed to save intake sheet';
       submitValidationErrors = result.validationErrors || {};
-      currentStep = 1;
+      const firstErrorField = Object.keys(submitValidationErrors)[0];
+      currentStep = firstErrorField ? stepForField(firstErrorField) : currentStep;
     }
     submitting = false;
   }
@@ -284,6 +430,51 @@
     const errors = submitValidationErrors[field];
     return Array.isArray(errors) && errors.length ? errors.join(' ') : '';
   }
+
+  // ── Turning raw Laravel validation keys into something a person can act on ──
+  // The backend reports errors as e.g. "persons.0.first_name" — technically
+  // correct, useless on its own in a 5-step wizard with repeatable rows.
+  const FIELD_LABELS = {
+    division_id: 'Division', school_id: 'School', date_of_intake: 'Date of Intake',
+    nature_of_case: 'Nature of Case', nature_of_case_other: 'Nature of Case (specify)',
+    persons: 'Person', role: 'Role', first_name: 'First Name', middle_name: 'Middle Name',
+    last_name: 'Last Name', birthdate: 'Birthdate', sex: 'Sex', grade: 'Grade', section: 'Section',
+    occupation: 'Occupation', contact_number: 'Contact Number', address: 'Address',
+    relation_to_learner_victim: 'Relation to Learner-Victim',
+    detailed_incidents: 'Incident', date_of_incident: 'Date of Incident', description: 'Description',
+    is_estimated_date: 'Estimated Date',
+    actions_taken: 'Action Taken', action_taken: 'Action Taken',
+    recommendations: 'Recommendation', recommendation: 'Recommendation',
+    referrals: 'Referral', referred_to: 'Referred To', reason: 'Reason'
+  };
+  const STEP_FOR_PREFIX = [
+    { prefix: 'persons', step: 2 },
+    { prefix: 'detailed_incidents', step: 3 },
+    { prefix: 'actions_taken', step: 4 },
+    { prefix: 'recommendations', step: 4 },
+    { prefix: 'referrals', step: 4 }
+  ];
+
+  /** "persons.0.first_name" → "Person #1 — First Name" */
+  /** @param {string} key */
+  function humanizeFieldPath(key) {
+    const parts = key.split('.');
+    if (parts.length === 3 && /^\d+$/.test(parts[1])) {
+      const [group, idx, field] = parts;
+      const groupLabel = FIELD_LABELS[group] || group;
+      const fieldLabel = FIELD_LABELS[field] || field.replace(/_/g, ' ');
+      return `${groupLabel} #${Number(idx) + 1} — ${fieldLabel}`;
+    }
+    return FIELD_LABELS[key] || key.replace(/_/g, ' ');
+  }
+
+  /** @param {string} key */
+  function stepForField(key) {
+    const hit = STEP_FOR_PREFIX.find((s) => key === s.prefix || key.startsWith(`${s.prefix}.`));
+    return hit ? hit.step : 1;
+  }
+
+  let validationEntries = $derived(Object.entries(submitValidationErrors));
 </script>
 
 {#snippet personFields(person, prefix, opts = {})}
@@ -318,7 +509,7 @@
     {/if}
     <div class="form-control">
       <label class="label py-1" for="{prefix}-contact"><span class="label-text text-xs">Contact Number</span></label>
-      <input id="{prefix}-contact" type="text" class="input input-bordered input-sm" bind:value={person.contact_number} />
+      <input id="{prefix}-contact" type="tel" inputmode="tel" class="input input-bordered input-sm" bind:value={person.contact_number} />
     </div>
   </div>
   {#if opts.showGradeSection}
@@ -351,25 +542,72 @@
   {/if}
 {/snippet}
 
-<div class="max-w-4xl mx-auto space-y-6">
-  <h1 class="text-2xl font-bold">{isEdit ? 'Edit Intake Sheet' : 'New Intake Sheet'}</h1>
+<div class="max-w-4xl mx-auto space-y-4 sm:space-y-6 pb-24 sm:pb-6">
+  <div class="flex items-center gap-2">
+    <h1 class="text-xl sm:text-2xl font-bold">{isEdit ? 'Edit Intake Sheet' : 'New Intake Sheet'}</h1>
+    {#if isDraftFlow}
+      <span class="badge badge-warning badge-sm" title="Each step is saved as you go — safe to leave and resume later">Draft</span>
+    {/if}
+  </div>
 
-  <ul class="steps w-full text-xs sm:text-sm">
-    {#each STEPS as s}
-      <li class="step {currentStep >= s.n ? 'step-primary' : ''}">
-        <button type="button" class="cursor-pointer" onclick={() => goToStep(s.n)}>{s.label}</button>
-      </li>
-    {/each}
-  </ul>
+  {#if isFromReport && sourceReport}
+    <div class="alert alert-info text-sm">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+      </svg>
+      <span>Pre-filled from Learner Report #{fromReportId}. Review each step and fill in anything missing — it'll be linked back to the report once you submit.</span>
+    </div>
+  {/if}
+
+  <!-- Compact step indicator (mobile): the full labeled steps bar below doesn't
+       fit 5 labels on a narrow screen without wrapping, so under md we show a
+       "Step X of 5" line with a slim progress bar instead. -->
+  <div class="md:hidden">
+    <div class="flex items-center justify-between text-xs text-base-content/60 mb-1.5">
+      <span class="font-medium">Step {currentStep} of {STEPS.length}</span>
+      <span>{STEPS[currentStep - 1].label}</span>
+    </div>
+    <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
+      <div class="bg-primary h-full rounded-full transition-all duration-300" style="width:{(currentStep / STEPS.length) * 100}%"></div>
+    </div>
+  </div>
+
+  <div class="hidden md:block">
+    <ul class="steps w-full text-sm">
+      {#each STEPS as s}
+        <li class="step {currentStep >= s.n ? 'step-primary' : ''}">
+          <button type="button" class="cursor-pointer" onclick={() => goToStep(s.n)}>{s.label}</button>
+        </li>
+      {/each}
+    </ul>
+  </div>
 
   {#if loading}
     <div class="text-center py-16"><span class="loading loading-spinner loading-lg"></span></div>
   {:else}
     {#if submitError}
-      <div class="alert alert-error text-sm"><span>{submitError}</span></div>
+      <div class="alert alert-error text-sm flex-col items-stretch gap-2">
+        <div class="flex items-start gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 shrink-0 mt-0.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+          </svg>
+          <span>{submitError}</span>
+        </div>
+        {#if validationEntries.length}
+          <ul class="list-disc list-inside pl-1 space-y-0.5">
+            {#each validationEntries as [field, messages]}
+              <li>
+                <button type="button" class="underline underline-offset-2 font-medium" onclick={() => currentStep = stepForField(field)}>
+                  {humanizeFieldPath(field)}
+                </button>: {Array.isArray(messages) ? messages.join(' ') : messages}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
     {/if}
 
-    <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
+    <div class="card bg-base-100 shadow-sm border border-base-200 p-4 sm:p-5">
       <!-- Step 1: Intake Info -->
       {#if currentStep === 1}
         <h2 class="font-semibold text-lg mb-4">Intake Information</h2>
@@ -447,10 +685,10 @@
         {@render personFields(learner, 'lv', { showGradeSection: true })}
 
         {#each /** @type {const} */ (['MOTHER', 'FATHER', 'GUARDIAN']) as role}
-          <div class="divider text-sm">
-            {role.charAt(0) + role.slice(1).toLowerCase()}
-            <label class="flex items-center gap-2 text-xs font-normal cursor-pointer">
-              <input type="checkbox" class="checkbox checkbox-xs" bind:checked={optional[role].included} />
+          <div class="flex items-center justify-between gap-3 mt-5 mb-2 pb-2 border-b border-base-200">
+            <span class="text-sm font-medium">{role.charAt(0) + role.slice(1).toLowerCase()}</span>
+            <label class="flex items-center gap-2 text-xs text-base-content/60 cursor-pointer shrink-0">
+              <input type="checkbox" class="checkbox checkbox-sm" bind:checked={optional[role].included} />
               Include
             </label>
           </div>
@@ -462,7 +700,7 @@
         <div class="divider text-sm">Complainant(s)</div>
         {#each complainants as c, i}
           <div class="border border-base-200 rounded-lg p-3 mb-3 relative">
-            <button type="button" class="btn btn-ghost btn-xs text-error absolute top-2 right-2" onclick={() => removeComplainant(i)}>Remove</button>
+            <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeComplainant(i)}>Remove</button>
             {@render personFields(c, `comp-${i}`, { showOccupation: true, showRelation: true })}
           </div>
         {/each}
@@ -471,7 +709,7 @@
         <div class="divider text-sm">Alleged Offender(s)</div>
         {#each allegedOffenders as o, i}
           <div class="border border-base-200 rounded-lg p-3 mb-3 relative">
-            <button type="button" class="btn btn-ghost btn-xs text-error absolute top-2 right-2" onclick={() => removeOffender(i)}>Remove</button>
+            <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeOffender(i)}>Remove</button>
             {@render personFields(o, `off-${i}`, { showOccupation: true, showRelation: true })}
           </div>
         {/each}
@@ -484,14 +722,14 @@
         {#each incidents as inc, i}
           <div class="border border-base-200 rounded-lg p-3 mb-3 relative space-y-3">
             {#if incidents.length > 1}
-              <button type="button" class="btn btn-ghost btn-xs text-error absolute top-2 right-2" onclick={() => removeIncident(i)}>Remove</button>
+              <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeIncident(i)}>Remove</button>
             {/if}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="form-control">
                 <label class="label py-1" for="inc-date-{i}"><span class="label-text text-xs">Date of Incident</span></label>
                 <input id="inc-date-{i}" type="text" class="input input-bordered input-sm" placeholder="e.g. 2026-06-14 or &quot;About 2 years ago&quot;" bind:value={inc.date_of_incident} />
               </div>
-              <label class="flex items-center gap-2 text-sm mt-6 cursor-pointer">
+              <label class="flex items-center gap-2 text-sm sm:mt-6 cursor-pointer">
                 <input type="checkbox" class="checkbox checkbox-sm" bind:checked={inc.is_estimated_date} />
                 This is an estimated date
               </label>
@@ -512,7 +750,7 @@
           <div class="flex gap-2 mb-2">
             <textarea class="textarea textarea-bordered textarea-sm flex-1" rows="2" placeholder="Action taken…" bind:value={a.action_taken}></textarea>
             {#if actions.length > 1}
-              <button type="button" class="btn btn-ghost btn-xs text-error" onclick={() => removeAction(i)}>✕</button>
+              <button type="button" class="btn btn-ghost btn-sm text-error" onclick={() => removeAction(i)}>✕</button>
             {/if}
           </div>
         {/each}
@@ -523,7 +761,7 @@
           <div class="flex gap-2 mb-2">
             <textarea class="textarea textarea-bordered textarea-sm flex-1" rows="2" placeholder="Recommendation…" bind:value={r.recommendation}></textarea>
             {#if recommendations.length > 1}
-              <button type="button" class="btn btn-ghost btn-xs text-error" onclick={() => removeRecommendation(i)}>✕</button>
+              <button type="button" class="btn btn-ghost btn-sm text-error" onclick={() => removeRecommendation(i)}>✕</button>
             {/if}
           </div>
         {/each}
@@ -533,7 +771,7 @@
         {#each referrals as r, i}
           <div class="border border-base-200 rounded-lg p-3 mb-2 relative">
             {#if referrals.length > 1}
-              <button type="button" class="btn btn-ghost btn-xs text-error absolute top-2 right-2" onclick={() => removeReferral(i)}>✕</button>
+              <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeReferral(i)}>✕</button>
             {/if}
             <div class="form-control">
               <label class="label py-1" for="ref-to-{i}"><span class="label-text text-xs">Referred To</span></label>
@@ -589,16 +827,22 @@
       {/if}
     </div>
 
-    <div class="flex items-center justify-between">
-      <button type="button" class="btn btn-ghost btn-sm" disabled={currentStep === 1} onclick={back}>« Back</button>
-      {#if currentStep < STEPS.length}
-        <button type="button" class="btn btn-primary btn-sm" onclick={next}>Next »</button>
-      {:else}
-        <button type="button" class="btn btn-primary btn-sm" disabled={submitting} onclick={handleSubmit}>
-          {#if submitting}<span class="loading loading-spinner loading-xs"></span>{/if}
-          {isEdit ? 'Save Changes' : 'Submit Intake Sheet'}
-        </button>
-      {/if}
+    <!-- Fixed on mobile so Back/Next stay reachable without scrolling through a
+         long section; reverts to a plain inline row from sm: up. -->
+    <div class="fixed sm:static bottom-0 inset-x-0 sm:inset-auto z-20 bg-base-100/95 sm:bg-transparent backdrop-blur-lg sm:backdrop-blur-none border-t sm:border-t-0 border-base-200 px-4 sm:px-0 py-3 sm:py-0 safe-area-bottom">
+      <div class="flex items-center justify-between gap-3 max-w-4xl mx-auto">
+        <button type="button" class="btn btn-ghost" disabled={currentStep === 1 || submitting} onclick={back}>« Back</button>
+        {#if currentStep < STEPS.length}
+          <button type="button" class="btn btn-primary flex-1 sm:flex-none" disabled={submitting} onclick={next}>
+            {#if submitting}<span class="loading loading-spinner loading-xs"></span> Saving…{:else}Next »{/if}
+          </button>
+        {:else}
+          <button type="button" class="btn btn-primary flex-1 sm:flex-none" disabled={submitting} onclick={handleSubmit}>
+            {#if submitting}<span class="loading loading-spinner loading-xs"></span>{/if}
+            {isEdit && !isDraftFlow ? 'Save Changes' : isFromReport ? 'Finalize & Link to Report' : 'Finalize Intake Sheet'}
+          </button>
+        {/if}
+      </div>
     </div>
   {/if}
 </div>

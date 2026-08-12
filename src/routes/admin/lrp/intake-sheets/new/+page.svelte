@@ -1,5 +1,6 @@
 <script>
+  import { page } from '$app/state';
   import IntakeSheetForm from '$lib/components/IntakeSheetForm.svelte';
 </script>
 
-<IntakeSheetForm />
+<IntakeSheetForm fromReportId={page.url.searchParams.get('from_report')} />
