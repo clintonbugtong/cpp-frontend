@@ -59,10 +59,7 @@
 
   const ROLE_OPTIONS = [
     { slug: 'super-admin', name: 'Super Admin' },
-    { slug: 'legal-info-admin', name: 'Legal Information System Administrator' },
-    { slug: 'legal-services-admin', name: 'Legal Services Administrator' },
-    { slug: 'child-protection-coordinator', name: 'Child Protection Coordinator' },
-    { slug: 'school-titling-coordinator', name: 'School Site Titling Coordinator' }
+    { slug: 'legal-info-admin', name: 'Legal Information System Administrator' }
   ];
 
   onMount(async () => {
@@ -295,9 +292,8 @@
     const name = typeof role === 'string' ? role : role.name;
     if (name?.includes('Super')) return 'badge-error';
     if (name?.includes('Legal Information') || name?.includes('LIS')) return 'badge-warning';
-    if (name?.includes('Legal Services')) return 'badge-primary';
-    if (name?.includes('Child')) return 'badge-success';
-    if (name?.includes('Titling')) return 'badge-info';
+    if (name?.includes('Division')) return 'badge-info';
+    if (name?.includes('Learner')) return 'badge-success';
     return 'badge-ghost';
   }
 
@@ -373,7 +369,7 @@
           <tr>
             <th>User</th>
             <th>Roles</th>
-            <th>Division</th>
+            <th>Division / School</th>
             <th>Position</th>
             <th>Status</th>
             <th>Security</th>
@@ -409,7 +405,10 @@
                   </div>
                 </td>
                 <td class="text-sm">
-                  {#if user.division}
+                  {#if user.school}
+                    <span class="text-base-content/70">{user.school.name}</span>
+                    <span class="badge badge-ghost badge-xs align-middle ml-1">School</span>
+                  {:else if user.division}
                     <span class="text-base-content/70">{user.division.name}</span>
                   {:else}
                     <span class="badge badge-ghost badge-sm">Regional</span>

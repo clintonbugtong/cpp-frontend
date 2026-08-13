@@ -3,13 +3,18 @@
   import { goto } from '$app/navigation';
   import { authState } from '$lib/stores/auth.svelte.js';
   import { intakeSheetsService } from '$lib/api/intake-sheets.js';
+  import { learnerReportsService } from '$lib/api/learner-reports.js';
   import { api } from '$lib/api/client.js';
   import { natureOfCaseLabel } from '$lib/constants/intake-sheets.js';
+  import { natureOfConcernLabel, relationshipLabel } from '$lib/constants/learner-reports.js';
+  import TrendLineChart from '$lib/components/TrendLineChart.svelte';
 
   let loading = $state(true);
   let error = $state('');
   /** @type {any} */
   let data = $state(null);
+  /** @type {any} */
+  let reportStats = $state(null);
 
   const isRegional = authState.user?.organizationLevel === 'regional';
   /** @type {any[]} */
@@ -34,12 +39,19 @@
     /** @type {Record<string,any>} */
     const params = {};
     if (divisionFilter) params.division_id = divisionFilter;
-    const result = await intakeSheetsService.getStatistics(params);
-    if (result.success) {
-      data = result.data;
+
+    const [sheetsRes, reportsRes] = await Promise.all([
+      intakeSheetsService.getStatistics(params),
+      learnerReportsService.getStatistics(params)
+    ]);
+
+    if (sheetsRes.success) {
+      data = sheetsRes.data;
     } else {
-      error = result.error || 'Failed to load dashboard.';
+      error = sheetsRes.error || 'Failed to load dashboard.';
     }
+    if (reportsRes.success) reportStats = reportsRes.data;
+
     loading = false;
   }
 
@@ -53,14 +65,40 @@
     if (!total) return 0;
     return Math.round((n / total) * 100);
   }
-  /** @param {any[]} arr @param {string} key */
-  function maxOf(arr, key) {
-    return arr.reduce((m, r) => Math.max(m, r[key] ?? 0), 1);
-  }
   /** @param {string} sex */
   function sexLabel(sex) {
     return sex === 'MALE' ? 'Male' : sex === 'FEMALE' ? 'Female' : 'Unspecified';
   }
+  /** @param {number|null|undefined} hours */
+  function fmtHours(hours) {
+    if (hours === null || hours === undefined) return '—';
+    if (hours < 24) return `${hours}h`;
+    return `${(hours / 24).toFixed(1)}d`;
+  }
+
+  // Every card/chart below carries a colored top edge + its section's icon so
+  // it's recognizable which data source it belongs to even out of context of
+  // the section header (Intake Sheets = primary, Learner Reports = accent —
+  // kept consistent with the Super Admin dashboard's matching panels).
+  const SHEET_CARD = 'bg-base-100 rounded-2xl p-5 border border-base-200 border-t-2 border-t-primary/50';
+  const REPORT_CARD = 'bg-base-100 rounded-2xl p-5 border border-base-200 border-t-2 border-t-accent/50';
+
+  // Combined trend chart — merges both series' independently-fetched 6-month
+  // windows into one aligned month list (they cover the same calendar window,
+  // but are joined by month key rather than assumed to already match 1:1).
+  let trendMonths = $derived.by(() => {
+    /** @type {Map<string, {month: string, label: string, sheets: number, reports: number}>} */
+    const byMonth = new Map();
+    for (const m of data?.monthly_trend || []) {
+      byMonth.set(m.month, { month: m.month, label: m.label, sheets: m.count, reports: 0 });
+    }
+    for (const m of reportStats?.monthly_trend || []) {
+      const existing = byMonth.get(m.month);
+      if (existing) existing.reports = m.count;
+      else byMonth.set(m.month, { month: m.month, label: m.label, sheets: 0, reports: m.count });
+    }
+    return [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+  });
 </script>
 
 <div class="space-y-6">
@@ -79,10 +117,10 @@
             <option value={String(d.division_id)}>{d.name}</option>
           {/each}
         </select>
-      {:else if authState.user?.division}
+      {:else if authState.getOrgLabel()}
         <div class="flex items-center gap-2 px-3 py-1.5 bg-base-100 border border-base-200 rounded-xl text-xs">
           <span class="w-2 h-2 rounded-full bg-primary"></span>
-          <span class="text-base-content/60">{authState.user.division.name}</span>
+          <span class="text-base-content/60">{authState.getOrgLabel()}</span>
         </div>
       {/if}
     </div>
@@ -124,10 +162,34 @@
         <span><strong>{data.summary.drafts}</strong> intake sheet{data.summary.drafts !== 1 ? 's' : ''} still in draft — not counted below until finalized. Tap to view.</span>
       </button>
     {/if}
+    {#if (reportStats?.summary?.new ?? 0) > 0}
+      <button
+        type="button"
+        class="alert bg-accent/10 border border-accent/30 text-sm w-full text-left hover:bg-accent/20 transition-colors"
+        onclick={() => goto('/admin/lrp/reports?status=new')}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0 text-accent">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5"/>
+        </svg>
+        <span><strong>{reportStats.summary.new}</strong> new learner report{reportStats.summary.new !== 1 ? 's' : ''} awaiting triage. Tap to review.</span>
+      </button>
+    {/if}
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         Intake Sheets — the actual case record. Identity color: primary.
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div class="flex items-center gap-2">
+      <span class="w-5 h-5 rounded-md bg-primary/15 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3 h-3 text-primary">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 12h6M9 16h6"/>
+        </svg>
+      </span>
+      <p class="text-xs font-semibold text-primary uppercase tracking-wider">Intake Sheets</p>
+    </div>
 
     <!-- Section 1 — Key Metrics -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <div class="bg-base-100 rounded-2xl p-5 border border-base-200 hover:shadow-sm transition-shadow">
+      <button type="button" class="{SHEET_CARD} hover:shadow-sm transition-shadow text-left w-full cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets')}>
         <div class="flex items-center justify-between mb-3">
           <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Total Sheets</span>
           <span class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -137,10 +199,10 @@
           </span>
         </div>
         <p class="text-3xl font-bold tracking-tight">{data.summary?.total ?? '—'}</p>
-        <p class="text-xs text-base-content/40 mt-1.5">{data.summary?.recently_added ?? 0} new in last 30 days</p>
-      </div>
+        <p class="text-xs text-base-content/40 mt-1.5">{data.summary?.recently_added ?? 0} new in last 30 days · tap to view</p>
+      </button>
 
-      <div class="bg-base-100 rounded-2xl p-5 border border-base-200 hover:shadow-sm transition-shadow">
+      <button type="button" class="{SHEET_CARD} hover:shadow-sm transition-shadow text-left w-full cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets?status=pending_review')}>
         <div class="flex items-center justify-between mb-3">
           <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Pending Review</span>
           <span class="w-8 h-8 rounded-xl bg-warning/10 flex items-center justify-center shrink-0">
@@ -150,10 +212,10 @@
           </span>
         </div>
         <p class="text-3xl font-bold tracking-tight">{data.summary?.pending_review ?? '—'}</p>
-        <p class="text-xs text-base-content/40 mt-1.5">Awaiting review</p>
-      </div>
+        <p class="text-xs text-base-content/40 mt-1.5">Tap to view</p>
+      </button>
 
-      <div class="bg-base-100 rounded-2xl p-5 border border-base-200 hover:shadow-sm transition-shadow">
+      <button type="button" class="{SHEET_CARD} hover:shadow-sm transition-shadow text-left w-full cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets?status=reviewed')}>
         <div class="flex items-center justify-between mb-3">
           <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Reviewed</span>
           <span class="w-8 h-8 rounded-xl bg-success/10 flex items-center justify-center shrink-0">
@@ -163,10 +225,10 @@
           </span>
         </div>
         <p class="text-3xl font-bold tracking-tight">{data.summary?.reviewed ?? '—'}</p>
-        <p class="text-xs text-base-content/40 mt-1.5">{pct(data.summary?.reviewed ?? 0, data.summary?.total ?? 0)}% of total</p>
-      </div>
+        <p class="text-xs text-base-content/40 mt-1.5">{pct(data.summary?.reviewed ?? 0, data.summary?.total ?? 0)}% of total · tap to view</p>
+      </button>
 
-      <div class="bg-base-100 rounded-2xl p-5 border border-base-200 hover:shadow-sm transition-shadow">
+      <div class="{SHEET_CARD} hover:shadow-sm transition-shadow">
         <div class="flex items-center justify-between mb-3">
           <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">New This Month</span>
           <span class="w-8 h-8 rounded-xl bg-info/10 flex items-center justify-center shrink-0">
@@ -180,9 +242,10 @@
       </div>
     </div>
 
-    <!-- Section 2 — Nature of Case + Learner Sex + Monthly Trend -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <div class="bg-base-100 rounded-2xl p-5 border border-base-200">
+    <!-- Section 2 — Nature of Case + Learner Sex (monthly trend moved to the
+         combined chart below, alongside Learner Reports) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class={SHEET_CARD}>
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-sm font-semibold">Nature of Case</h2>
           <span class="text-xs text-base-content/30 font-mono">{data.summary?.total ?? 0} total</span>
@@ -207,7 +270,7 @@
         {/if}
       </div>
 
-      <div class="bg-base-100 rounded-2xl p-5 border border-base-200">
+      <div class={SHEET_CARD}>
         <h2 class="text-sm font-semibold mb-4">Learner-Victims by Sex</h2>
         {#if data.by_sex?.length}
           {@const totalSex = data.by_sex.reduce((s, r) => s + r.count, 0)}
@@ -226,43 +289,12 @@
           <p class="text-sm text-base-content/30 text-center py-4">No data</p>
         {/if}
       </div>
-
-      <div class="bg-base-100 rounded-2xl p-5 border border-base-200">
-        <div class="flex items-center justify-between mb-1">
-          <h2 class="text-sm font-semibold">Monthly Volume</h2>
-          <span class="text-xs font-bold tabular-nums text-base-content/50">
-            {data.monthly_trend?.reduce((s, m) => s + m.count, 0) ?? 0} sheets
-          </span>
-        </div>
-        <p class="text-xs text-base-content/30 mb-4">Past 6 months</p>
-        {#if data.monthly_trend?.length}
-          {@const maxVal = maxOf(data.monthly_trend, 'count')}
-          <div class="flex items-end gap-2 h-20">
-            {#each data.monthly_trend as m}
-              {@const h = Math.max(3, Math.round((m.count / maxVal) * 80))}
-              <div class="flex-1 flex flex-col items-center gap-1 min-w-0">
-                <div
-                  class="w-full rounded-sm bg-primary/60 hover:bg-primary transition-colors cursor-default"
-                  style="height:{h}px"
-                  title="{m.label}: {m.count}"
-                ></div>
-              </div>
-            {/each}
-          </div>
-          <div class="flex justify-between text-xs text-base-content/25 mt-1.5">
-            <span>{data.monthly_trend[0]?.label}</span>
-            <span>{data.monthly_trend[data.monthly_trend.length - 1]?.label}</span>
-          </div>
-        {:else}
-          <p class="text-sm text-base-content/30 text-center py-6">No activity data</p>
-        {/if}
-      </div>
     </div>
 
     <!-- Section 3 — By Division (regional only) + Top Schools -->
     <div class="grid grid-cols-1 {data.by_division?.length ? 'lg:grid-cols-2' : ''} gap-4">
       {#if data.by_division?.length}
-        <div class="bg-base-100 rounded-2xl p-5 border border-base-200">
+        <div class={SHEET_CARD}>
           <h2 class="text-sm font-semibold mb-4">By Division</h2>
           <div class="space-y-3">
             {#each data.by_division as row}
@@ -272,7 +304,7 @@
                   <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
                 </div>
                 <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
-                  <div class="bg-secondary h-full rounded-full transition-all duration-500" style="width:{pct(row.count, data.summary?.total)}%"></div>
+                  <div class="bg-primary h-full rounded-full transition-all duration-500" style="width:{pct(row.count, data.summary?.total)}%"></div>
                 </div>
               </div>
             {/each}
@@ -280,7 +312,7 @@
         </div>
       {/if}
 
-      <div class="bg-base-100 rounded-2xl p-5 border border-base-200">
+      <div class={SHEET_CARD}>
         <h2 class="text-sm font-semibold mb-4">Schools with the Most Cases</h2>
         {#if data.by_school?.length}
           <div class="space-y-3">
@@ -298,12 +330,126 @@
       </div>
     </div>
 
-    <!-- Quick link -->
+    <!-- ═══════════════════════════════════════════════════════════════════
+         Learner Reports — submissions from the public report form, ahead of
+         (and separate from) full intake sheets. Identity color: accent.
+    ═══════════════════════════════════════════════════════════════════ -->
+    {#if reportStats}
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center gap-2">
+          <span class="w-5 h-5 rounded-md bg-accent/15 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3 h-3 text-accent">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5"/>
+            </svg>
+          </span>
+          <p class="text-xs font-semibold text-accent uppercase tracking-wider">Learner Reports</p>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick={() => goto('/admin/lrp/reports')}>View All →</button>
+      </div>
+
+      <div class="bg-base-100 rounded-2xl border border-base-200 border-t-2 border-t-accent/50 p-5">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-px bg-base-200 rounded-xl overflow-hidden">
+          <button type="button" class="bg-base-100 hover:bg-base-200 transition-colors px-4 py-4 text-center cursor-pointer" onclick={() => goto('/admin/lrp/reports')}>
+            <p class="text-2xl font-bold tabular-nums">{reportStats.summary?.total ?? 0}</p>
+            <p class="text-xs text-base-content/40 mt-0.5">Total</p>
+          </button>
+          <button type="button" class="bg-base-100 hover:bg-base-200 transition-colors px-4 py-4 text-center cursor-pointer" onclick={() => goto('/admin/lrp/reports?status=new')}>
+            <p class="text-2xl font-bold tabular-nums text-warning">{reportStats.summary?.new ?? 0}</p>
+            <p class="text-xs text-base-content/40 mt-0.5">New</p>
+          </button>
+          <button type="button" class="bg-base-100 hover:bg-base-200 transition-colors px-4 py-4 text-center cursor-pointer" onclick={() => goto('/admin/lrp/reports?status=under_review')}>
+            <p class="text-2xl font-bold tabular-nums text-info">{reportStats.summary?.under_review ?? 0}</p>
+            <p class="text-xs text-base-content/40 mt-0.5">Under Review</p>
+          </button>
+          <button type="button" class="bg-base-100 hover:bg-base-200 transition-colors px-4 py-4 text-center cursor-pointer" onclick={() => goto('/admin/lrp/reports?status=linked')}>
+            <p class="text-2xl font-bold tabular-nums text-success">{reportStats.summary?.linked ?? 0}</p>
+            <p class="text-xs text-base-content/40 mt-0.5">Linked</p>
+          </button>
+        </div>
+        <div class="flex items-center justify-between mt-3 text-xs text-base-content/40">
+          <span>Tap a number above to view that list — {reportStats.summary?.dismissed ?? 0} dismissed · {reportStats.summary?.recently_added ?? 0} new in last 30 days</span>
+          <span class="hidden sm:inline">Avg. time to first review: <span class="font-semibold text-base-content/60">{fmtHours(reportStats.summary?.avg_review_hours)}</span></span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class={REPORT_CARD}>
+          <h2 class="text-sm font-semibold mb-4">Nature of Concern</h2>
+          {#if reportStats.by_nature_of_concern?.length}
+            <div class="space-y-3">
+              {#each reportStats.by_nature_of_concern as row}
+                {@const w = pct(row.count, reportStats.summary?.total)}
+                <div>
+                  <div class="flex justify-between items-baseline mb-1">
+                    <span class="text-xs text-base-content/60 truncate pr-2 leading-tight">{natureOfConcernLabel(row.nature_of_concern)}</span>
+                    <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
+                  </div>
+                  <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-accent h-full rounded-full transition-all duration-500" style="width:{w}%"></div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-sm text-base-content/30 text-center py-4">No data</p>
+          {/if}
+        </div>
+
+        <div class={REPORT_CARD}>
+          <h2 class="text-sm font-semibold mb-4">Who's Reporting</h2>
+          {#if reportStats.by_relationship?.length}
+            <div class="space-y-3">
+              {#each reportStats.by_relationship as row}
+                {@const w = pct(row.count, reportStats.summary?.total)}
+                <div>
+                  <div class="flex justify-between items-baseline mb-1">
+                    <span class="text-xs text-base-content/60 truncate pr-2 leading-tight">{relationshipLabel(row.relationship)}</span>
+                    <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
+                  </div>
+                  <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-accent h-full rounded-full transition-all duration-500" style="width:{w}%"></div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-sm text-base-content/30 text-center py-4">No data</p>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    <!-- Combined trend — both series on one shared count axis, so volume can
+         actually be compared month to month instead of read from two
+         separate mini-charts. -->
+    {#if trendMonths.length}
+      <div class="bg-base-100 rounded-2xl p-5 border border-base-200">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-sm font-semibold">Monthly Volume</h2>
+        </div>
+        <p class="text-xs text-base-content/30 mb-4">Past 6 months</p>
+        <TrendLineChart
+          months={trendMonths.map((m) => ({ label: m.label }))}
+          series={[
+            { name: 'Intake Sheets', color: 'var(--color-primary)', values: trendMonths.map((m) => m.sheets) },
+            { name: 'Learner Reports', color: 'var(--color-accent)', values: trendMonths.map((m) => m.reports) }
+          ]}
+        />
+      </div>
+    {/if}
+
+    <!-- Quick links -->
     <div class="bg-base-100 rounded-2xl border border-base-200 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <p class="text-sm text-base-content/60">View, review, or file a new intake sheet.</p>
-      <button class="btn btn-primary btn-sm w-full sm:w-auto" onclick={() => goto('/admin/lrp/intake-sheets')}>
-        Go to Intake Sheets
-      </button>
+      <p class="text-sm text-base-content/60">View, review, or file a new intake sheet — or triage an incoming learner report.</p>
+      <div class="flex gap-2 w-full sm:w-auto">
+        <button class="btn btn-outline btn-sm flex-1 sm:flex-none" onclick={() => goto('/admin/lrp/reports')}>
+          <span class="w-2 h-2 rounded-full bg-accent shrink-0"></span>
+          Learner Reports
+        </button>
+        <button class="btn btn-primary btn-sm flex-1 sm:flex-none" onclick={() => goto('/admin/lrp/intake-sheets')}>
+          Intake Sheets
+        </button>
+      </div>
     </div>
   {/if}
 </div>

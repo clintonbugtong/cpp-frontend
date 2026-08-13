@@ -1,8 +1,10 @@
-# Auth & User Management — Frontend
+# Learner Rights & Protection — Staff Admin Frontend
 
-SvelteKit 5 SPA (client-rendered, static-adapter build) containing the
-authentication and user/role-management screens extracted from the LSIS v4
-frontend. Talks to the [`../backend`](../backend) Laravel API.
+SvelteKit 5 SPA (client-rendered, static-adapter build) for DepEd Cordillera
+Administrative Region's Learner Rights & Protection (child protection) case
+management system. Talks to the [`../backend`](../backend) Laravel API. The
+public, unauthenticated report-submission site lives in the separate
+[`../learner-portal`](../learner-portal) app.
 
 ## Stack
 
@@ -41,18 +43,26 @@ seeded user to log in with.
 - `src/routes/admin/profile/` — self-service profile, password change, 2FA enable/disable
 - `src/routes/admin/super-admin/` — Super Admin dashboard, user management, audit logs
 - `src/routes/admin/lis/` — Legal Information System Administrator (division-scoped) dashboard, user management, audit logs
+- `src/routes/admin/lrp/` — Learner Right Protection Focal Person: dashboard,
+  intake sheets (the case record itself), learner reports (submissions from
+  the public learner portal, triaged here and optionally turned into an
+  intake sheet), and FAQ content management (regional-level accounts only —
+  the same content the learner portal's public FAQ page reads)
 - `src/routes/admin/dashboard/` — generic landing dashboard shown to roles without a dedicated one
 
-## Notes on this extraction
+## Notes
 
-- The auth store (`auth.svelte.js`) keeps its role/menu/permission tables for
-  all five backend roles — including `Legal Services Administrator`, `Child
-  Protection Coordinator`, and `School Site Titling Coordinator` — even
-  though this frontend only ships pages for `Super Admin` and `Legal
-  Information System Administrator`. That's intentional, mirroring the
-  backend's `RoleService`: those other roles can still log in, but their
-  dashboards point at routes this module doesn't include. Add the
-  corresponding case-management/child-protection/site-titling frontend
-  modules alongside this one if you need them.
+- The backend currently seeds three roles: `Super Admin`, `Division User
+  Administrator`, and `Learner Right Protection Focal Person` (see
+  `../backend/database/seeders/RoleSeeder.php`). The Focal Person role covers
+  school/division/regional scope from a single role — resolved server-side
+  from the account's own `school_id`/`division_id`, not by separate roles.
+  `Legal Information System Administrator` has pages here but is not
+  currently seeded in the backend.
+- This app previously carried scaffolding for an "Administrative Cases /
+  Certificates / Child Protection / Site Titling" module set inherited from
+  an earlier template. It was removed (August 2026) since it had no backend
+  implementation and this application's scope is Learner Rights & Protection
+  only — see `auth.svelte.js` git history if you need to resurrect it.
 - The Capacitor splash-screen hook was removed from the root layout since it
   dynamically imports `@capacitor/splash-screen`, which isn't installed here.

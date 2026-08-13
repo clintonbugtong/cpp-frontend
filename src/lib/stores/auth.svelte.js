@@ -27,9 +27,6 @@ class AuthState {
   roleDashboards = {
     'Super Admin': '/admin/super-admin/dashboard',
     'Legal Information System Administrator': '/admin/lis/dashboard',
-    'Legal Services Administrator': '/admin/legal-services/dashboard',
-    'Child Protection Coordinator': '/admin/child-protection/dashboard',
-    'School Site Titling Coordinator': '/admin/site-titling/dashboard',
     'Learner Right Protection Focal Person': '/admin/lrp/dashboard'
   };
 
@@ -39,9 +36,6 @@ class AuthState {
   rolePathPrefixes = {
     'Super Admin': ['/admin/'],
     'Legal Information System Administrator': ['/admin/lis/'],
-    'Legal Services Administrator': ['/admin/legal-services/'],
-    'Child Protection Coordinator': ['/admin/child-protection/'],
-    'School Site Titling Coordinator': ['/admin/site-titling/'],
     // Covers school/division/regional-level Focal Persons alike — scope
     // within this section is resolved server-side from the account's own
     // school_id/division_id, not by a separate frontend role.
@@ -52,9 +46,6 @@ class AuthState {
   roleDisplayNames = {
     'Super Admin': 'Super Admin',
     'Legal Information System Administrator': 'LIS Dashboard',
-    'Legal Services Administrator': 'Administrative Cases',
-    'Child Protection Coordinator': 'Child Protection',
-    'School Site Titling Coordinator': 'Site Titling',
     'Learner Right Protection Focal Person': 'LRP Dashboard'
   };
 
@@ -69,20 +60,14 @@ class AuthState {
       accessibleDashboards: [
         'Super Admin',
         'Legal Information System Administrator',
-        'Legal Services Administrator',
-        'Child Protection Coordinator',
-        'School Site Titling Coordinator',
         'Learner Right Protection Focal Person'
       ],
       menuItems: [
         { name: 'Super Admin', role: 'Super Admin', path: '/admin/super-admin/dashboard', icon: 'shield' },
-        { name: 'Administrative Cases', role: 'Legal Services Administrator', path: '/admin/legal-services/dashboard', icon: 'scale' },
-        { name: 'Certificates', path: '/admin/legal-services/certificates', icon: 'certificate' },
-        { name: 'Child Protection', role: 'Child Protection Coordinator', path: '/admin/child-protection/dashboard', icon: 'heart' },
-        { name: 'Site Titling', role: 'School Site Titling Coordinator', path: '/admin/site-titling/dashboard', icon: 'building' },
         { name: 'LRP Dashboard', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/dashboard', icon: 'clipboard-list' },
         { name: 'Intake Sheets', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
         { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' },
+        { name: 'Manage FAQs', path: '/admin/lrp/faqs', icon: 'faq' },
         { name: 'User Management', path: '/admin/super-admin/users', icon: 'users' },
         { name: 'Audit Logs', path: '/admin/super-admin/logs', icon: 'clipboard' },
         // { name: 'Settings', path: '/admin/super-admin/settings', icon: 'cog' }
@@ -101,40 +86,6 @@ class AuthState {
         { name: 'Audit Logs', path: '/admin/lis/logs', icon: 'clipboard' }
       ]
     },
-    'Legal Services Administrator': {
-      canAccessAllDashboards: false,
-      canManageUsers: false,
-      canViewAuditLogs: false,
-      canManageSettings: false,
-      scope: 'self',
-      accessibleDashboards: ['Legal Services Administrator'],
-      menuItems: [
-        { name: 'Administrative Cases', role: 'Legal Services Administrator', path: '/admin/legal-services/dashboard', icon: 'scale' },
-        { name: 'Certificates', path: '/admin/legal-services/certificates', icon: 'certificate' }
-      ]
-    },
-    'Child Protection Coordinator': {
-      canAccessAllDashboards: false,
-      canManageUsers: false,
-      canViewAuditLogs: false,
-      canManageSettings: false,
-      scope: 'self',
-      accessibleDashboards: ['Child Protection Coordinator'],
-      menuItems: [
-        { name: 'Child Protection', role: 'Child Protection Coordinator', path: '/admin/child-protection/dashboard', icon: 'heart' }
-      ]
-    },
-    'School Site Titling Coordinator': {
-      canAccessAllDashboards: false,
-      canManageUsers: false,
-      canViewAuditLogs: false,
-      canManageSettings: false,
-      scope: 'self',
-      accessibleDashboards: ['School Site Titling Coordinator'],
-      menuItems: [
-        { name: 'Site Titling', role: 'School Site Titling Coordinator', path: '/admin/site-titling/dashboard', icon: 'building' }
-      ]
-    },
     'Learner Right Protection Focal Person': {
       canAccessAllDashboards: false,
       canManageUsers: false,
@@ -150,7 +101,10 @@ class AuthState {
       menuItems: [
         { name: 'Dashboard', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/dashboard', icon: 'dashboard' },
         { name: 'Intake Sheets', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
-        { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' }
+        { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' },
+        // FAQ content management is regional-only — not every Focal Person
+        // account should see this, even though the role spans all 3 levels.
+        { name: 'Manage FAQs', path: '/admin/lrp/faqs', icon: 'faq', regionalOnly: true }
       ]
     }
   };
@@ -333,6 +287,9 @@ class AuthState {
       const perms = this.permissions[role];
       if (perms) {
         for (const item of perms.menuItems) {
+          // Some items (e.g. FAQ management) only apply to a regional-level
+          // account even though the role itself spans school/division/regional.
+          if (item.regionalOnly && this.user?.organizationLevel !== 'regional') continue;
           if (item.role && seenRoles.has(item.role)) continue;
           if (item.role) seenRoles.add(item.role);
           if (seenPaths.has(item.path)) continue;
@@ -397,59 +354,21 @@ class AuthState {
     return (user?.permissions ?? []).includes(permission);
   }
 
-  // ── Administrative Cases ─────────────────────────────────────────────────
-  // Super Admin has view_legal_cases only → read-only
-  // Legal Services Admin has manage_legal_cases → full CRUD
-  // Role fallback covers fresh-login state before /api/me permissions are loaded.
-  canViewCases() {
-    return this.hasPermission('manage_legal_cases') || this.hasPermission('view_legal_cases')
-      || this.hasRole('Legal Services Administrator') || this.hasRole('Super Admin');
-  }
-  canCreateCase() {
-    return this.hasPermission('manage_legal_cases') || this.hasRole('Legal Services Administrator');
-  }
-  canUpdateCase() {
-    return this.hasPermission('manage_legal_cases') || this.hasRole('Legal Services Administrator');
-  }
-  canDeleteCase() {
-    return this.hasPermission('manage_legal_cases') || this.hasRole('Legal Services Administrator');
-  }
-  // True when user can view cases but cannot write (Super Admin read-only access)
-  isCasesReadOnly() {
-    const canManage = this.hasPermission('manage_legal_cases') || this.hasRole('Legal Services Administrator');
-    const canView   = this.hasPermission('view_legal_cases')   || this.hasRole('Super Admin');
-    return canView && !canManage;
-  }
-
-  // ── Certificates of No Pending Case ─────────────────────────────────────
-  canViewCertificates() {
-    return this.hasPermission('manage_legal_cases') || this.hasPermission('view_legal_cases')
-      || this.hasRole('Legal Services Administrator') || this.hasRole('Super Admin');
-  }
-  canIssueCertificate() {
-    return this.hasPermission('manage_legal_cases') || this.hasRole('Legal Services Administrator');
-  }
-  canRevokeCertificate() {
-    return this.hasPermission('manage_legal_cases') || this.hasRole('Legal Services Administrator');
-  }
-  // True for Super Admin and regional-level Legal Services Administrators — mirrors the
-  // backend's getUserOrganizationLevel(): whoever has no division/school assigned.
-  // Regional-level accounts see all divisions and can filter cases/certificates by division.
+  // True for Super Admin and other regional-level accounts (no division/school
+  // assigned) — mirrors the backend's getUserOrganizationLevel(). Used to decide
+  // whether a user sees/filters data across every division or just their own.
   isRegionalLevel() {
     return this.user?.organizationLevel === 'regional';
   }
 
-  // ── Child Protection ─────────────────────────────────────────────────────
-  canViewChildCases() {
-    return this.hasPermission('manage_child_cases') || this.hasPermission('view_child_cases');
+  // Human label for the account's own assignment — school takes priority
+  // over division since a school-scoped account's division_id is null (see
+  // getEffectiveDivisionId() on the backend). Null for a regional account,
+  // which has neither — callers show a "Regional" label themselves so the
+  // wording can match their context (e.g. "Regional Office" vs "Regional").
+  getOrgLabel() {
+    return this.user?.school?.name || this.user?.division?.name || null;
   }
-  canManageChildCases() { return this.hasPermission('manage_child_cases'); }
-
-  // ── School Site Titling ──────────────────────────────────────────────────
-  canViewTitling() {
-    return this.hasPermission('manage_titling_applications') || this.hasPermission('view_titling_applications');
-  }
-  canManageTitling() { return this.hasPermission('manage_titling_applications'); }
 
   // ── Learner Rights & Protection Intake Sheets ────────────────────────────
   // Focal Person has full CRUD (scoped server-side to their division unless
@@ -479,6 +398,15 @@ class AuthState {
   }
   isLearnerReportsReadOnly() {
     return this.hasRole('Super Admin') && !this.hasRole('Learner Right Protection Focal Person');
+  }
+
+  // ── FAQ content (learner portal's public FAQ page) ───────────────────────
+  // Super Admin: always. Focal Person: only when the account itself is
+  // regional-level (no division_id/school_id) — division/school-level Focal
+  // Persons are scoped to case work, not site content.
+  canManageFaqs() {
+    return this.hasRole('Super Admin') ||
+      (this.hasRole('Learner Right Protection Focal Person') && this.user?.organizationLevel === 'regional');
   }
 }
 

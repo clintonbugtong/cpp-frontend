@@ -10,6 +10,16 @@ class LearnerReportsService {
 		}
 	}
 
+	/** @param {Record<string, any>} params */
+	async getStatistics(params = {}) {
+		try {
+			const response = await api.get('/learner-reports/statistics', params);
+			return { success: true, data: response };
+		} catch (err) {
+			return { success: false, error: err.message };
+		}
+	}
+
 	async getReport(id) {
 		try {
 			const response = await api.get(`/learner-reports/${id}`);

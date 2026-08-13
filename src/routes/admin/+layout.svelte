@@ -39,9 +39,6 @@
   const dashboardPages = [
     '/admin/super-admin/dashboard',
     '/admin/lis/dashboard',
-    '/admin/legal-services/dashboard',
-    '/admin/child-protection/dashboard',
-    '/admin/site-titling/dashboard',
     '/admin/lrp/dashboard',
     '/admin/lrp/reports',
     '/admin/dashboard'
@@ -82,17 +79,11 @@
     '/admin/lis/dashboard': 'LIS Dashboard',
     '/admin/lis/users': 'User Management',
     '/admin/lis/logs': 'Audit Logs',
-    '/admin/legal-services/dashboard': 'Administrative Cases',
-    '/admin/legal-services/cases': 'Cases',
-    '/admin/legal-services/cases/create': 'New Case',
-    '/admin/legal-services/certificates': 'Certificates',
-    '/admin/legal-services/certificates/list': 'All Certificates',
-    '/admin/child-protection/dashboard': 'Child Protection',
-    '/admin/site-titling/dashboard': 'Site Titling',
     '/admin/lrp/dashboard': 'LRP Dashboard',
     '/admin/lrp/intake-sheets': 'Intake Sheets',
     '/admin/lrp/intake-sheets/new': 'New Intake Sheet',
     '/admin/lrp/reports': 'Learner Reports',
+    '/admin/lrp/faqs': 'Manage FAQs',
     '/admin/profile': 'My Profile',
     '/admin/dashboard': 'Dashboard'
   };
@@ -101,10 +92,6 @@
     const path = page.url.pathname;
     if (pageTitleMap[path]) {
       currentRole = pageTitleMap[path];
-    } else if (path.match(/\/legal-services\/cases\/.+\/edit/)) {
-      currentRole = 'Edit Case';
-    } else if (path.match(/\/legal-services\/cases\/.+/)) {
-      currentRole = 'Case Details';
     } else if (path.match(/\/lrp\/intake-sheets\/.+\/edit/)) {
       currentRole = 'Edit Intake Sheet';
     } else if (path.match(/\/lrp\/intake-sheets\/.+/)) {
@@ -115,12 +102,6 @@
       currentRole = 'Super Admin';
     } else if (path.includes('/lis')) {
       currentRole = 'LIS Dashboard';
-    } else if (path.includes('/legal-services')) {
-      currentRole = 'Administrative Cases';
-    } else if (path.includes('/child-protection')) {
-      currentRole = 'Child Protection';
-    } else if (path.includes('/site-titling')) {
-      currentRole = 'Site Titling';
     } else if (path.includes('/lrp')) {
       currentRole = 'LRP Dashboard';
     } else {
@@ -147,16 +128,13 @@
   function getIcon(iconName) {
     const icons = {
       'shield': 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
-      'scale': 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-      'heart': 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z',
-      'building': 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
       'document': 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
       'users': 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
       'clipboard': 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01',
       'clipboard-list': 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 12h6M9 16h6',
-      'certificate': 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
       'cog': 'M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
-      'dashboard': 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'
+      'dashboard': 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
+      'faq': 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
     };
     return icons[iconName] || icons['dashboard'];
   }
@@ -249,8 +227,10 @@
             <span class="w-1 h-1 rounded-full bg-base-300 hidden sm:block"></span>
             <span class="text-xs text-base-content/50 hidden sm:block">
               {authState.user?.fullName}
-              {#if authState.user?.division?.name}
-                • {authState.user.division.name}
+              {#if authState.getOrgLabel()}
+                • {authState.getOrgLabel()}
+              {:else if authState.isRegionalLevel()}
+                • Regional
               {/if}
             </span>
           </div>
@@ -274,8 +254,10 @@
                 <div class="px-3 py-2">
                   <p class="font-medium text-sm">{authState.user?.fullName}</p>
                   <p class="text-xs text-base-content/50 truncate">{authState.user?.email}</p>
-                  {#if authState.user?.division?.name}
-                    <p class="text-xs text-base-content/40 mt-1">{authState.user.division.name}</p>
+                  {#if authState.getOrgLabel()}
+                    <p class="text-xs text-base-content/40 mt-1">{authState.getOrgLabel()}</p>
+                  {:else if authState.isRegionalLevel()}
+                    <p class="text-xs text-base-content/40 mt-1">Regional</p>
                   {/if}
                 </div>
                 <div class="divider my-1"></div>

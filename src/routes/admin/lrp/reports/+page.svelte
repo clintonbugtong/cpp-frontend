@@ -1,6 +1,7 @@
 <script>
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import { learnerReportsService } from '$lib/api/learner-reports.js';
   import { authState } from '$lib/stores/auth.svelte.js';
   import { api } from '$lib/api/client.js';
@@ -11,7 +12,9 @@
   let loading = $state(true);
   let error = $state('');
 
-  let statusFilter = $state('');
+  // Supports deep-linking from the dashboard's "new reports" banner
+  // (?status=new) the same way the intake sheets list handles ?status=draft.
+  let statusFilter = $state(page.url.searchParams.get('status') || '');
   let natureFilter = $state('');
   let divisionFilter = $state('');
   let currentPage = $state(1);

@@ -143,10 +143,9 @@
 
   function getRoleBadge(role) {
     if (role.includes('Super')) return 'badge-error';
-    if (role.includes('Legal Services')) return 'badge-primary';
-    if (role.includes('Legal Information')) return 'badge-info';
-    if (role.includes('Child Protection')) return 'badge-success';
-    if (role.includes('Site Titling')) return 'badge-warning';
+    if (role.includes('Legal Information')) return 'badge-warning';
+    if (role.includes('Division')) return 'badge-info';
+    if (role.includes('Learner')) return 'badge-success';
     return 'badge-ghost';
   }
 </script>
@@ -177,7 +176,7 @@
           </div>
         </div>
       </div>
-      {#if authState.user?.division?.name || authState.user?.position}
+      {#if authState.user?.division?.name || authState.user?.school?.name || authState.user?.position || authState.isRegionalLevel()}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 pt-4 border-t border-base-200">
           {#if authState.user?.position}
             <div>
@@ -185,10 +184,20 @@
               <p class="text-sm font-medium mt-0.5">{authState.user.position}</p>
             </div>
           {/if}
-          {#if authState.user?.division?.name}
+          {#if authState.user?.school?.name}
+            <div>
+              <p class="text-xs text-base-content/40 uppercase tracking-wider">School</p>
+              <p class="text-sm font-medium mt-0.5">{authState.user.school.name}</p>
+            </div>
+          {:else if authState.user?.division?.name}
             <div>
               <p class="text-xs text-base-content/40 uppercase tracking-wider">Division</p>
               <p class="text-sm font-medium mt-0.5">{authState.user.division.name}</p>
+            </div>
+          {:else if authState.isRegionalLevel()}
+            <div>
+              <p class="text-xs text-base-content/40 uppercase tracking-wider">Coverage</p>
+              <p class="text-sm font-medium mt-0.5">Regional</p>
             </div>
           {/if}
         </div>

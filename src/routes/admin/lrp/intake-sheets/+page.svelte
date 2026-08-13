@@ -21,6 +21,7 @@
   let total = $state(0);
 
   const isRegional = authState.user?.organizationLevel === 'regional';
+  const isSchoolLevel = authState.user?.organizationLevel === 'school';
   /** @type {any[]} */
   let divisions = $state([]);
 
@@ -75,6 +76,8 @@
       <p class="text-base-content/50 mt-1">
         {#if authState.isIntakeSheetsReadOnly()}
           Read-only view across all divisions · {total} sheet{total !== 1 ? 's' : ''}
+        {:else if isSchoolLevel}
+          {authState.user?.school?.name || 'Your school'} · {total} sheet{total !== 1 ? 's' : ''}
         {:else if isRegional}
           All divisions · {total} sheet{total !== 1 ? 's' : ''}
         {:else}

@@ -62,10 +62,7 @@
 
   // Division-level LISA cannot assign super-admin
   const ROLE_OPTIONS = [
-    { slug: 'legal-info-admin', name: 'Legal Information System Administrator' },
-    { slug: 'legal-services-admin', name: 'Legal Services Administrator' },
-    { slug: 'child-protection-coordinator', name: 'Child Protection Coordinator' },
-    { slug: 'school-titling-coordinator', name: 'School Site Titling Coordinator' }
+    { slug: 'legal-info-admin', name: 'Legal Information System Administrator' }
   ];
 
   onMount(async () => {
@@ -292,9 +289,6 @@
   function getRoleBadge(role) {
     const name = typeof role === 'string' ? role : role.name;
     if (name?.includes('Legal Information') || name?.includes('LIS')) return 'badge-warning';
-    if (name?.includes('Legal Services')) return 'badge-primary';
-    if (name?.includes('Child')) return 'badge-success';
-    if (name?.includes('Titling')) return 'badge-info';
     return 'badge-ghost';
   }
 
@@ -382,7 +376,7 @@
           <tr>
             <th>User</th>
             <th>Roles</th>
-            {#if authState.isRegionalLevel()}<th>Division</th>{/if}
+            {#if authState.isRegionalLevel()}<th>Division / School</th>{/if}
             <th>Position</th>
             <th>Status</th>
             <th>Security</th>
@@ -419,7 +413,10 @@
                 </td>
                 {#if authState.isRegionalLevel()}
                   <td class="text-sm">
-                    {#if user.division}
+                    {#if user.school}
+                      <span class="text-base-content/70">{user.school.name}</span>
+                      <span class="badge badge-ghost badge-xs align-middle ml-1">School</span>
+                    {:else if user.division}
                       <span class="text-base-content/70">{user.division.name}</span>
                     {:else}
                       <span class="badge badge-ghost badge-sm">Regional</span>

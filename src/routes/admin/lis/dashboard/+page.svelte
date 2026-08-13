@@ -1,6 +1,6 @@
 <script>
   import { authState } from '$lib/stores/auth.svelte.js';
-  import { lisDashboardService } from '$lib/api/lis-dashboard.js';
+  import { dashboardService } from '$lib/api/dashboard.js';
   import { onMount } from 'svelte';
 
   let loading = $state(true);
@@ -9,7 +9,7 @@
   let data = $state(null);
 
   onMount(async () => {
-    const result = await lisDashboardService.getDashboard();
+    const result = await dashboardService.getDashboard();
     if (result.success) {
       data = result.data;
     } else {
