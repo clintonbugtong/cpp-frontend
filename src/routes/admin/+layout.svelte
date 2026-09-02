@@ -76,7 +76,7 @@
     '/admin/super-admin/dashboard': 'Super Admin',
     '/admin/super-admin/users': 'User Management',
     '/admin/super-admin/logs': 'Audit Logs',
-    '/admin/lis/dashboard': 'LIS Dashboard',
+    '/admin/lis/dashboard': 'Division Dashboard',
     '/admin/lis/users': 'User Management',
     '/admin/lis/logs': 'Audit Logs',
     '/admin/lrp/dashboard': 'LRP Dashboard',
@@ -101,7 +101,7 @@
     } else if (path.includes('/super-admin')) {
       currentRole = 'Super Admin';
     } else if (path.includes('/lis')) {
-      currentRole = 'LIS Dashboard';
+      currentRole = 'Division Dashboard';
     } else if (path.includes('/lrp')) {
       currentRole = 'LRP Dashboard';
     } else {

@@ -56,13 +56,61 @@
       username: '', email: '', password: '', password_confirmation: '',
       first_name: '', middle_name: '', last_name: '',
       contact_number: '', position: '',
-      roles: /** @type {string[]} */ ([]), is_active: true
+      roles: /** @type {string[]} */ ([]), school_id: '', is_active: true
     };
   }
 
-  // Division-level LISA cannot assign super-admin
+  // ── School search-as-you-type — designates a Learner Right Protection Focal
+  // Person as school-level (e.g. a guidance counselor) instead of the default
+  // division-level. The backend only allows picking a school within this
+  // admin's own division. Leave blank for a division-level account.
+  let schoolQuery = $state('');
+  /** @type {any[]} */
+  let schoolResults = $state([]);
+  let schoolSearching = $state(false);
+  /** @type {any} */
+  let selectedSchool = $state(null);
+  /** @type {ReturnType<typeof setTimeout>|undefined} */
+  let schoolSearchTimeout;
+
+  function onSchoolQueryInput() {
+    selectedSchool = null;
+    form.school_id = '';
+    clearTimeout(schoolSearchTimeout);
+    const q = schoolQuery.trim();
+    if (q.length < 2) { schoolResults = []; return; }
+    schoolSearchTimeout = setTimeout(async () => {
+      schoolSearching = true;
+      try {
+        const res = await api.get('/search/schools/quick', { q, per_page: 10 });
+        schoolResults = res.data?.data || [];
+      } catch (e) {
+        schoolResults = [];
+      }
+      schoolSearching = false;
+    }, 300);
+  }
+
+  /** @param {any} school */
+  function pickSchool(school) {
+    selectedSchool = school;
+    form.school_id = String(school.school_id);
+    schoolQuery = school.name;
+    schoolResults = [];
+  }
+
+  function clearSchool() {
+    selectedSchool = null;
+    form.school_id = '';
+    schoolQuery = '';
+    schoolResults = [];
+  }
+
+  // A Division User Administrator cannot assign Super Admin — only roles
+  // scoped to their own division.
   const ROLE_OPTIONS = [
-    { slug: 'legal-info-admin', name: 'Legal Information System Administrator' }
+    { slug: 'division-user-admin', name: 'Division User Administrator' },
+    { slug: 'learner-rights-focal-person', name: 'Learner Right Protection Focal Person' }
   ];
 
   onMount(async () => {
@@ -114,6 +162,7 @@
     form = emptyForm();
     formError = '';
     formErrors = {};
+    clearSchool();
     createModal?.showModal();
   }
 
@@ -136,9 +185,11 @@
       position: form.position,
       roles: form.roles,
       is_active: form.is_active
-      // division_id is auto-set by the backend to the LISA's division
+      // division_id is auto-set by the backend to the LISA's division —
+      // unless school_id is set below, which is school-level instead.
     };
     if (form.middle_name) data.middle_name = form.middle_name;
+    if (form.school_id) data.school_id = parseInt(form.school_id);
 
     const result = await usersService.createUser(data);
     if (result.success) {
@@ -151,6 +202,12 @@
     formSubmitting = false;
   }
 
+  // Tracks the school_id this user had when the edit modal opened, so
+  // handleEdit() can tell "cleared an existing school" apart from "never
+  // touched school" — only the former should re-anchor them to this
+  // division-user-admin's own division instead of leaving division_id alone.
+  let originalSchoolId = $state('');
+
   // --- Edit ---
   /** @param {any} user */
   async function openEdit(user) {
@@ -159,6 +216,7 @@
     const result = await usersService.getUser(user.id);
     const detail = result.success ? (result.data?.user || result.data) : user;
     editingUser = detail;
+    originalSchoolId = detail.school_id ? String(detail.school_id) : '';
     form = {
       username: detail.username || '',
       email: detail.email || '',
@@ -170,8 +228,16 @@
       contact_number: detail.contact_number || '',
       position: detail.position || '',
       roles: (detail.roles || []).map((/** @type {any} */ r) => typeof r === 'string' ? r : r.slug),
+      school_id: detail.school_id ? String(detail.school_id) : '',
       is_active: detail.is_active ?? true
     };
+    if (detail.school) {
+      selectedSchool = { school_id: detail.school.id, name: detail.school.name };
+      schoolQuery = detail.school.name;
+      schoolResults = [];
+    } else {
+      clearSchool();
+    }
     editModal?.showModal();
   }
 
@@ -191,8 +257,18 @@
       contact_number: form.contact_number,
       position: form.position,
       roles: form.roles,
-      is_active: form.is_active
+      is_active: form.is_active,
+      // Always sent explicitly so clearing it (back to division-level) reaches
+      // the backend instead of being silently omitted.
+      school_id: form.school_id ? parseInt(form.school_id) : null
     };
+    // Only re-anchor to this admin's own division when an existing school
+    // assignment was just cleared — otherwise leave division_id untouched so
+    // an unrelated edit (e.g. just the phone number) can't silently re-scope
+    // a user who was never school-level to begin with.
+    if (originalSchoolId && !form.school_id) {
+      data.division_id = authState.user?.division?.id ?? null;
+    }
     if (form.middle_name !== undefined) data.middle_name = form.middle_name;
     if (form.password) {
       data.password = form.password;
@@ -288,7 +364,8 @@
   /** @param {any} role */
   function getRoleBadge(role) {
     const name = typeof role === 'string' ? role : role.name;
-    if (name?.includes('Legal Information') || name?.includes('LIS')) return 'badge-warning';
+    if (name?.includes('Division')) return 'badge-warning';
+    if (name?.includes('Learner')) return 'badge-success';
     return 'badge-ghost';
   }
 
@@ -534,6 +611,37 @@
         </div>
       </div>
 
+      <div class="form-control relative">
+        <label class="label py-1" for="c-school"><span class="label-text text-xs">School (optional — for a school-level Focal Person)</span></label>
+        <input
+          id="c-school" type="text" class="input input-bordered input-sm"
+          placeholder="Type to search schools in your division…" autocomplete="off"
+          bind:value={schoolQuery} oninput={onSchoolQueryInput}
+        />
+        {#if schoolSearching}
+          <span class="text-xs text-base-content/50 mt-1">Searching…</span>
+        {/if}
+        {#if schoolResults.length}
+          <ul class="absolute z-10 top-full mt-1 w-full bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            {#each schoolResults as s}
+              <li>
+                <button type="button" class="w-full text-left px-3 py-2 hover:bg-base-200 text-sm" onclick={() => pickSchool(s)}>
+                  {s.name} <span class="text-base-content/50">· {s.division?.name || '—'}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if selectedSchool}
+          <div class="flex items-center gap-2 mt-1">
+            <span class="text-xs text-success">Selected: {selectedSchool.name}</span>
+            <button type="button" class="text-xs text-base-content/40 hover:text-base-content/70 underline" onclick={clearSchool}>clear</button>
+          </div>
+        {:else}
+          <p class="text-xs text-base-content/40 mt-1">Leave blank for a division-level account (the default).</p>
+        {/if}
+      </div>
+
       <div class="form-control">
         <span class="label-text text-xs font-medium">Roles *</span>
         <div class="flex flex-wrap gap-2 mt-2">
@@ -620,6 +728,37 @@
           <label class="label py-1" for="e-contact"><span class="label-text text-xs">Contact Number *</span></label>
           <input id="e-contact" type="text" class="input input-bordered input-sm" bind:value={form.contact_number} required />
         </div>
+      </div>
+
+      <div class="form-control relative">
+        <label class="label py-1" for="e-school"><span class="label-text text-xs">School (optional — for a school-level Focal Person)</span></label>
+        <input
+          id="e-school" type="text" class="input input-bordered input-sm"
+          placeholder="Type to search schools in your division…" autocomplete="off"
+          bind:value={schoolQuery} oninput={onSchoolQueryInput}
+        />
+        {#if schoolSearching}
+          <span class="text-xs text-base-content/50 mt-1">Searching…</span>
+        {/if}
+        {#if schoolResults.length}
+          <ul class="absolute z-10 top-full mt-1 w-full bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            {#each schoolResults as s}
+              <li>
+                <button type="button" class="w-full text-left px-3 py-2 hover:bg-base-200 text-sm" onclick={() => pickSchool(s)}>
+                  {s.name} <span class="text-base-content/50">· {s.division?.name || '—'}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if selectedSchool}
+          <div class="flex items-center gap-2 mt-1">
+            <span class="text-xs text-success">Selected: {selectedSchool.name}</span>
+            <button type="button" class="text-xs text-base-content/40 hover:text-base-content/70 underline" onclick={clearSchool}>clear</button>
+          </div>
+        {:else}
+          <p class="text-xs text-base-content/40 mt-1">Leave blank for a division-level account (the default).</p>
+        {/if}
       </div>
 
       <div class="form-control">

@@ -1,9 +1,8 @@
 import { api } from './client.js';
 
 // Backend's generic org-wide dashboard endpoint (users + audit log stats).
-// Shared by Super Admin (unscoped) and Division User Administrator /
-// Legal Information System Administrator (scoped to their own division by
-// the backend — see DashboardController::index()).
+// Shared by Super Admin (unscoped) and Division User Administrator
+// (scoped to their own division by the backend — see DashboardController::index()).
 class DashboardService {
 	async getDashboard() {
 		try {

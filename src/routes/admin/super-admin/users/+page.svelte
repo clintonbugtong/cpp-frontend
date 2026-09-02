@@ -53,13 +53,67 @@
       username: '', email: '', password: '', password_confirmation: '',
       first_name: '', middle_name: '', last_name: '',
       contact_number: '', position: '',
-      roles: /** @type {string[]} */ ([]), division_id: '', is_active: true
+      roles: /** @type {string[]} */ ([]), division_id: '', school_id: '', is_active: true
     };
+  }
+
+  // ── School search-as-you-type — mutually exclusive with the division select
+  // below. Used for a school-level Learner Right Protection Focal Person
+  // (e.g. a designated guidance counselor) — leave both blank for a regional
+  // account, set division for division-level, set school for school-level.
+  let schoolQuery = $state('');
+  /** @type {any[]} */
+  let schoolResults = $state([]);
+  let schoolSearching = $state(false);
+  /** @type {any} */
+  let selectedSchool = $state(null);
+  /** @type {ReturnType<typeof setTimeout>|undefined} */
+  let schoolSearchTimeout;
+
+  function onSchoolQueryInput() {
+    selectedSchool = null;
+    form.school_id = '';
+    clearTimeout(schoolSearchTimeout);
+    const q = schoolQuery.trim();
+    if (q.length < 2) { schoolResults = []; return; }
+    schoolSearchTimeout = setTimeout(async () => {
+      schoolSearching = true;
+      try {
+        const res = await api.get('/search/schools/quick', { q, per_page: 10 });
+        schoolResults = res.data?.data || [];
+      } catch (e) {
+        schoolResults = [];
+      }
+      schoolSearching = false;
+    }, 300);
+  }
+
+  /** @param {any} school */
+  function pickSchool(school) {
+    selectedSchool = school;
+    form.school_id = String(school.school_id);
+    schoolQuery = school.name;
+    schoolResults = [];
+    form.division_id = ''; // mutually exclusive with a direct division assignment
+  }
+
+  function clearSchool() {
+    selectedSchool = null;
+    form.school_id = '';
+    schoolQuery = '';
+    schoolResults = [];
+  }
+
+  function onDivisionSelect() {
+    // Picking a division clears any school selection — a user is
+    // school-level, division-level, or regional, never more than one.
+    if (form.division_id) clearSchool();
   }
 
   const ROLE_OPTIONS = [
     { slug: 'super-admin', name: 'Super Admin' },
-    { slug: 'legal-info-admin', name: 'Legal Information System Administrator' }
+    { slug: 'division-user-admin', name: 'Division User Administrator' },
+    { slug: 'learner-rights-focal-person', name: 'Learner Right Protection Focal Person' }
   ];
 
   onMount(async () => {
@@ -112,6 +166,7 @@
     form = emptyForm();
     formError = '';
     formErrors = {};
+    clearSchool();
     createModal?.showModal();
   }
 
@@ -137,6 +192,7 @@
     };
     if (form.middle_name) data.middle_name = form.middle_name;
     if (form.division_id) data.division_id = parseInt(form.division_id);
+    if (form.school_id) data.school_id = parseInt(form.school_id);
 
     const result = await usersService.createUser(data);
     if (result.success) {
@@ -170,8 +226,16 @@
       position: detail.position || '',
       roles: (detail.roles || []).map((/** @type {any} */ r) => typeof r === 'string' ? r : r.slug),
       division_id: detail.division_id ? String(detail.division_id) : '',
+      school_id: detail.school_id ? String(detail.school_id) : '',
       is_active: detail.is_active ?? true
     };
+    if (detail.school) {
+      selectedSchool = { school_id: detail.school.id, name: detail.school.name };
+      schoolQuery = detail.school.name;
+      schoolResults = [];
+    } else {
+      clearSchool();
+    }
     editModal?.showModal();
   }
 
@@ -191,10 +255,14 @@
       contact_number: form.contact_number,
       position: form.position,
       roles: form.roles,
-      is_active: form.is_active
+      is_active: form.is_active,
+      // Always send both explicitly (not just when truthy) so clearing one —
+      // e.g. converting a school-level account to division-level or regional —
+      // actually reaches the backend instead of being silently omitted.
+      division_id: form.division_id ? parseInt(form.division_id) : null,
+      school_id: form.school_id ? parseInt(form.school_id) : null
     };
     if (form.middle_name !== undefined) data.middle_name = form.middle_name;
-    if (form.division_id) data.division_id = parseInt(form.division_id);
     if (form.password) {
       data.password = form.password;
       data.password_confirmation = form.password_confirmation;
@@ -537,15 +605,49 @@
         </div>
       </div>
 
-      <div class="form-control">
-        <label class="label py-1" for="c-div"><span class="label-text text-xs">Division</span></label>
-        <select id="c-div" class="select select-bordered select-sm" bind:value={form.division_id}>
-          <option value="">No division (Regional)</option>
-          {#each divisions as d}
-            <option value={d.division_id}>{d.name}</option>
-          {/each}
-        </select>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="form-control">
+          <label class="label py-1" for="c-div"><span class="label-text text-xs">Division</span></label>
+          <select id="c-div" class="select select-bordered select-sm" bind:value={form.division_id} onchange={onDivisionSelect}>
+            <option value="">No division (Regional)</option>
+            {#each divisions as d}
+              <option value={d.division_id}>{d.name}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="form-control relative">
+          <label class="label py-1" for="c-school"><span class="label-text text-xs">School</span></label>
+          <input
+            id="c-school" type="text" class="input input-bordered input-sm"
+            placeholder="Type to search…" autocomplete="off"
+            bind:value={schoolQuery} oninput={onSchoolQueryInput}
+          />
+          {#if schoolSearching}
+            <span class="text-xs text-base-content/50 mt-1">Searching…</span>
+          {/if}
+          {#if schoolResults.length}
+            <ul class="absolute z-10 top-full mt-1 w-full bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              {#each schoolResults as s}
+                <li>
+                  <button type="button" class="w-full text-left px-3 py-2 hover:bg-base-200 text-sm" onclick={() => pickSchool(s)}>
+                    {s.name} <span class="text-base-content/50">· {s.division?.name || '—'}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if selectedSchool}
+            <div class="flex items-center gap-2 mt-1">
+              <span class="text-xs text-success">Selected: {selectedSchool.name}</span>
+              <button type="button" class="text-xs text-base-content/40 hover:text-base-content/70 underline" onclick={clearSchool}>clear</button>
+            </div>
+          {/if}
+        </div>
       </div>
+      <p class="text-xs text-base-content/40 -mt-2">
+        For a Learner Right Protection Focal Person: set a division for division-level, a school for school-level (e.g. a designated guidance counselor), or leave both blank for regional. Picking one clears the other.
+      </p>
 
       <div class="form-control">
         <span class="label-text text-xs font-medium">Roles *</span>
@@ -639,15 +741,49 @@
         </div>
       </div>
 
-      <div class="form-control">
-        <label class="label py-1" for="e-div"><span class="label-text text-xs">Division</span></label>
-        <select id="e-div" class="select select-bordered select-sm" bind:value={form.division_id}>
-          <option value="">No division (Regional)</option>
-          {#each divisions as d}
-            <option value={String(d.division_id)}>{d.name}</option>
-          {/each}
-        </select>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="form-control">
+          <label class="label py-1" for="e-div"><span class="label-text text-xs">Division</span></label>
+          <select id="e-div" class="select select-bordered select-sm" bind:value={form.division_id} onchange={onDivisionSelect}>
+            <option value="">No division (Regional)</option>
+            {#each divisions as d}
+              <option value={String(d.division_id)}>{d.name}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="form-control relative">
+          <label class="label py-1" for="e-school"><span class="label-text text-xs">School</span></label>
+          <input
+            id="e-school" type="text" class="input input-bordered input-sm"
+            placeholder="Type to search…" autocomplete="off"
+            bind:value={schoolQuery} oninput={onSchoolQueryInput}
+          />
+          {#if schoolSearching}
+            <span class="text-xs text-base-content/50 mt-1">Searching…</span>
+          {/if}
+          {#if schoolResults.length}
+            <ul class="absolute z-10 top-full mt-1 w-full bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              {#each schoolResults as s}
+                <li>
+                  <button type="button" class="w-full text-left px-3 py-2 hover:bg-base-200 text-sm" onclick={() => pickSchool(s)}>
+                    {s.name} <span class="text-base-content/50">· {s.division?.name || '—'}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if selectedSchool}
+            <div class="flex items-center gap-2 mt-1">
+              <span class="text-xs text-success">Selected: {selectedSchool.name}</span>
+              <button type="button" class="text-xs text-base-content/40 hover:text-base-content/70 underline" onclick={clearSchool}>clear</button>
+            </div>
+          {/if}
+        </div>
       </div>
+      <p class="text-xs text-base-content/40 -mt-2">
+        For a Learner Right Protection Focal Person: set a division for division-level, a school for school-level, or leave both blank for regional. Picking one clears the other.
+      </p>
 
       <div class="form-control">
         <span class="label-text text-xs font-medium">Roles *</span>

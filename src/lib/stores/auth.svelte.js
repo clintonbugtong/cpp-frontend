@@ -26,7 +26,7 @@ class AuthState {
   // Role dashboards
   roleDashboards = {
     'Super Admin': '/admin/super-admin/dashboard',
-    'Legal Information System Administrator': '/admin/lis/dashboard',
+    'Division User Administrator': '/admin/lis/dashboard',
     'Learner Right Protection Focal Person': '/admin/lrp/dashboard'
   };
 
@@ -35,7 +35,7 @@ class AuthState {
   // Every other role is scoped to its own section only.
   rolePathPrefixes = {
     'Super Admin': ['/admin/'],
-    'Legal Information System Administrator': ['/admin/lis/'],
+    'Division User Administrator': ['/admin/lis/'],
     // Covers school/division/regional-level Focal Persons alike — scope
     // within this section is resolved server-side from the account's own
     // school_id/division_id, not by a separate frontend role.
@@ -45,7 +45,7 @@ class AuthState {
   // Display names
   roleDisplayNames = {
     'Super Admin': 'Super Admin',
-    'Legal Information System Administrator': 'LIS Dashboard',
+    'Division User Administrator': 'Division Dashboard',
     'Learner Right Protection Focal Person': 'LRP Dashboard'
   };
 
@@ -59,7 +59,7 @@ class AuthState {
       scope: 'all', // all divisions and schools
       accessibleDashboards: [
         'Super Admin',
-        'Legal Information System Administrator',
+        'Division User Administrator',
         'Learner Right Protection Focal Person'
       ],
       menuItems: [
@@ -73,15 +73,15 @@ class AuthState {
         // { name: 'Settings', path: '/admin/super-admin/settings', icon: 'cog' }
       ]
     },
-    'Legal Information System Administrator': {
+    'Division User Administrator': {
       canAccessAllDashboards: false,
       canManageUsers: true,
       canViewAuditLogs: true,
       canManageSettings: false,
       scope: 'division', // limited to own division
-      accessibleDashboards: ['Legal Information System Administrator'],
+      accessibleDashboards: ['Division User Administrator'],
       menuItems: [
-        { name: 'LIS Dashboard', role: 'Legal Information System Administrator', path: '/admin/lis/dashboard', icon: 'document' },
+        { name: 'Division Dashboard', role: 'Division User Administrator', path: '/admin/lis/dashboard', icon: 'document' },
         { name: 'User Management', path: '/admin/lis/users', icon: 'users' },
         { name: 'Audit Logs', path: '/admin/lis/logs', icon: 'clipboard' }
       ]

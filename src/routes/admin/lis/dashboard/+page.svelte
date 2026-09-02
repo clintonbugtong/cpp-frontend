@@ -60,7 +60,7 @@
     <div>
       <p class="text-xs text-base-content/40 uppercase tracking-wider mb-0.5">Dashboard</p>
       <h1 class="text-2xl font-bold">{authState.user?.firstName || 'Administrator'}</h1>
-      <p class="text-sm text-base-content/50 mt-0.5">Legal Information System Administrator</p>
+      <p class="text-sm text-base-content/50 mt-0.5">Division User Administrator</p>
     </div>
     {#if authState.user?.division}
       <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-base-100 border border-base-200 rounded-xl text-xs">
