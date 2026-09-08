@@ -98,14 +98,18 @@
     {/if}
 
     {#if report.status === 'linked' && report.linked_intake_sheet}
-      <div class="alert alert-success text-sm">
+      <button
+        type="button"
+        class="alert bg-success/10 border border-success/30 text-sm w-full text-left hover:bg-success/20 transition-colors"
+        onclick={() => goto(`/admin/lrp/intake-sheets/${report.linked_intake_sheet.intake_sheet_id}`)}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0 text-success">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/>
+        </svg>
         <span>
-          Linked to
-          <button class="link link-success font-medium" onclick={() => goto(`/admin/lrp/intake-sheets/${report.linked_intake_sheet.intake_sheet_id}`)}>
-            Intake Sheet #{report.linked_intake_sheet.intake_sheet_id}
-          </button>
+          Linked to <span class="font-medium text-success">Intake Sheet #{report.linked_intake_sheet.intake_sheet_id}</span>. Tap to view.
         </span>
-      </div>
+      </button>
     {/if}
 
     <div class="card bg-base-100 shadow-sm border border-base-200 p-5">

@@ -110,6 +110,10 @@
     if (form.division_id) clearSchool();
   }
 
+  // A Division User Administrator has no regional/school tier — unlike Focal
+  // Person, it's meaningless without a division to administer.
+  let divisionRequired = $derived(form.roles.includes('division-user-admin'));
+
   const ROLE_OPTIONS = [
     { slug: 'super-admin', name: 'Super Admin' },
     { slug: 'division-user-admin', name: 'Division User Administrator' },
@@ -173,9 +177,15 @@
   /** @param {Event} e */
   async function handleCreate(e) {
     e.preventDefault();
-    formSubmitting = true;
     formError = '';
     formErrors = {};
+
+    if (divisionRequired && !form.division_id) {
+      formErrors = { division_id: ['A division is required for the Division User Administrator role.'] };
+      return;
+    }
+
+    formSubmitting = true;
 
     /** @type {Record<string,any>} */
     const data = {
@@ -242,9 +252,15 @@
   /** @param {Event} e */
   async function handleEdit(e) {
     e.preventDefault();
-    formSubmitting = true;
     formError = '';
     formErrors = {};
+
+    if (divisionRequired && !form.division_id) {
+      formErrors = { division_id: ['A division is required for the Division User Administrator role.'] };
+      return;
+    }
+
+    formSubmitting = true;
 
     /** @type {Record<string,any>} */
     const data = {
@@ -607,13 +623,20 @@
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div class="form-control">
-          <label class="label py-1" for="c-div"><span class="label-text text-xs">Division</span></label>
-          <select id="c-div" class="select select-bordered select-sm" bind:value={form.division_id} onchange={onDivisionSelect}>
+          <label class="label py-1" for="c-div">
+            <span class="label-text text-xs">Division{divisionRequired ? ' *' : ''}</span>
+          </label>
+          <select id="c-div" class="select select-bordered select-sm" class:select-error={fe('division_id')} bind:value={form.division_id} onchange={onDivisionSelect} required={divisionRequired}>
             <option value="">No division (Regional)</option>
             {#each divisions as d}
               <option value={d.division_id}>{d.name}</option>
             {/each}
           </select>
+          {#if fe('division_id')}
+            <p class="text-xs text-error mt-1">{fe('division_id')}</p>
+          {:else if divisionRequired}
+            <p class="text-xs text-base-content/40 mt-1">Required for the Division User Administrator role.</p>
+          {/if}
         </div>
 
         <div class="form-control relative">
@@ -743,13 +766,20 @@
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div class="form-control">
-          <label class="label py-1" for="e-div"><span class="label-text text-xs">Division</span></label>
-          <select id="e-div" class="select select-bordered select-sm" bind:value={form.division_id} onchange={onDivisionSelect}>
+          <label class="label py-1" for="e-div">
+            <span class="label-text text-xs">Division{divisionRequired ? ' *' : ''}</span>
+          </label>
+          <select id="e-div" class="select select-bordered select-sm" class:select-error={fe('division_id')} bind:value={form.division_id} onchange={onDivisionSelect} required={divisionRequired}>
             <option value="">No division (Regional)</option>
             {#each divisions as d}
               <option value={String(d.division_id)}>{d.name}</option>
             {/each}
           </select>
+          {#if fe('division_id')}
+            <p class="text-xs text-error mt-1">{fe('division_id')}</p>
+          {:else if divisionRequired}
+            <p class="text-xs text-base-content/40 mt-1">Required for the Division User Administrator role.</p>
+          {/if}
         </div>
 
         <div class="form-control relative">

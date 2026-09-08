@@ -338,13 +338,13 @@
          SECTION 5 — Deleted Users callout (if any)
     ═══════════════════════════════════════════════════════════════════════════ -->
     {#if (data.users?.deleted ?? 0) > 0}
-      <div class="alert alert-warning">
-        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <div class="alert bg-warning/10 border border-warning/30">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5 text-warning" fill="none" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
         </svg>
         <span>
           <span class="font-semibold">{data.users.deleted}</span> deleted user account{data.users.deleted !== 1 ? 's' : ''} on record.
-          Visit <a href="/admin/lis/users" class="link link-warning font-medium">User Management</a> to review or restore them.
+          Visit <a href="/admin/lis/users" class="link text-warning font-medium">User Management</a> to review or restore them.
         </span>
       </div>
     {/if}

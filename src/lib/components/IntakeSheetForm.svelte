@@ -474,7 +474,40 @@
     return hit ? hit.step : 1;
   }
 
+  // The backend returns Laravel's default English messages (e.g. "The
+  // persons.1.first_name field is required when persons is present.") —
+  // technically correct, but the raw field path and the "when ... is
+  // present" clause mean nothing to a non-technical reader, especially
+  // since the field is already named right next to this via
+  // humanizeFieldPath(). Translate the common patterns; anything that
+  // doesn't match (e.g. the hand-written "Exactly one person must be
+  // recorded..." messages) passes through unchanged since it's already fine.
+  const MESSAGE_PATTERNS = /** @type {[RegExp, string][]} */ ([
+    [/^The .+ must not be greater than (\d+) characters\.?$/i, 'Must be $1 characters or fewer.'],
+    [/^The .+ may not be greater than (\d+) characters\.?$/i, 'Must be $1 characters or fewer.'],
+    [/^The .+ must be at least (\d+) characters\.?$/i, 'Must be at least $1 characters.'],
+    [/^The .+ field is required(\s+when\s+.+)?\.?$/i, 'This field is required.'],
+    [/^The .+ must be a valid date\.?$/i, 'Enter a valid date.'],
+    [/^The .+ field must be a string\.?$/i, 'Enter valid text.'],
+    [/^The selected .+ is invalid\.?$/i, 'Please choose a valid option.'],
+    [/^The .+ must be an integer\.?$/i, 'Enter a whole number.'],
+    [/^The .+ field must be an? (boolean|number)\.?$/i, 'Enter a valid value.']
+  ]);
+  /** @param {string} msg */
+  function humanizeMessage(msg) {
+    if (!msg) return msg;
+    for (const [pattern, replacement] of MESSAGE_PATTERNS) {
+      if (pattern.test(msg)) return msg.replace(pattern, replacement);
+    }
+    return msg;
+  }
+
   let validationEntries = $derived(Object.entries(submitValidationErrors));
+  // Once there's a field-by-field breakdown below, the generic top banner
+  // ("Validation failed" / "Failed to save this step") is redundant — swap
+  // it for an actionable intro instead. Non-validation errors (a real save
+  // failure, the report-link failure, etc.) still show their own message.
+  let errorIntro = $derived(validationEntries.length ? 'Please fix the following before continuing:' : submitError);
 </script>
 
 {#snippet personFields(person, prefix, opts = {})}
@@ -591,7 +624,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 shrink-0 mt-0.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
           </svg>
-          <span>{submitError}</span>
+          <span>{errorIntro}</span>
         </div>
         {#if validationEntries.length}
           <ul class="list-disc list-inside pl-1 space-y-0.5">
@@ -599,7 +632,7 @@
               <li>
                 <button type="button" class="underline underline-offset-2 font-medium" onclick={() => currentStep = stepForField(field)}>
                   {humanizeFieldPath(field)}
-                </button>: {Array.isArray(messages) ? messages.join(' ') : messages}
+                </button>: {Array.isArray(messages) ? messages.map(humanizeMessage).join(' ') : humanizeMessage(messages)}
               </li>
             {/each}
           </ul>
