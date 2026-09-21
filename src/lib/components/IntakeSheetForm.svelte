@@ -447,6 +447,15 @@
     recommendations: 'Recommendation', recommendation: 'Recommendation',
     referrals: 'Referral', referred_to: 'Referred To', reason: 'Reason'
   };
+  // "Person #2" says nothing about who #2 actually is — swap in the role
+  // instead wherever there's only ever one of it (Mother, Father, etc.).
+  // Complainant/Alleged-Offender can repeat, so those keep a number, just
+  // counted within their own role instead of the overall array position.
+  const ROLE_LABELS = {
+    'LEARNER-VICTIM': 'Learner-Victim', MOTHER: 'Mother', FATHER: 'Father', GUARDIAN: 'Guardian',
+    COMPLAINANT: 'Complainant', 'ALLEGED-OFFENDER': 'Alleged Offender'
+  };
+  const REPEATABLE_ROLES = ['COMPLAINANT', 'ALLEGED-OFFENDER'];
   const STEP_FOR_PREFIX = [
     { prefix: 'persons', step: 2 },
     { prefix: 'detailed_incidents', step: 3 },
@@ -455,14 +464,28 @@
     { prefix: 'referrals', step: 4 }
   ];
 
-  /** "persons.0.first_name" → "Person #1 — First Name" */
+  /** "persons.0.first_name" → "Learner-Victim — First Name"; "persons.3.first_name" (2nd complainant) → "Complainant #2 — First Name" */
   /** @param {string} key */
   function humanizeFieldPath(key) {
     const parts = key.split('.');
     if (parts.length === 3 && /^\d+$/.test(parts[1])) {
       const [group, idx, field] = parts;
-      const groupLabel = FIELD_LABELS[group] || group;
       const fieldLabel = FIELD_LABELS[field] || field.replace(/_/g, ' ');
+      if (group === 'persons') {
+        const globalIdx = Number(idx);
+        const allPersons = buildPersons();
+        const role = allPersons[globalIdx]?.role;
+        const roleLabel = role ? ROLE_LABELS[/** @type {keyof typeof ROLE_LABELS} */ (role)] : null;
+        if (role && REPEATABLE_ROLES.includes(role)) {
+          const sameRoleIdx = allPersons.slice(0, globalIdx + 1).filter((p) => p.role === role).length;
+          return `${roleLabel} #${sameRoleIdx} — ${fieldLabel}`;
+        }
+        if (roleLabel) return `${roleLabel} — ${fieldLabel}`;
+        // Role couldn't be resolved (e.g. rows changed after the error was
+        // reported) — fall back to the plain index rather than guessing.
+        return `Person #${globalIdx + 1} — ${fieldLabel}`;
+      }
+      const groupLabel = FIELD_LABELS[group] || group;
       return `${groupLabel} #${Number(idx) + 1} — ${fieldLabel}`;
     }
     return FIELD_LABELS[key] || key.replace(/_/g, ' ');
