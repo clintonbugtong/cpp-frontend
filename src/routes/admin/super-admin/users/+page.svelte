@@ -110,13 +110,13 @@
     if (form.division_id) clearSchool();
   }
 
-  // A Division User Administrator has no regional/school tier — unlike Focal
+  // A Division Admin has no regional/school tier — unlike Focal
   // Person, it's meaningless without a division to administer.
   let divisionRequired = $derived(form.roles.includes('division-user-admin'));
 
   const ROLE_OPTIONS = [
     { slug: 'super-admin', name: 'Super Admin' },
-    { slug: 'division-user-admin', name: 'Division User Administrator' },
+    { slug: 'division-user-admin', name: 'Division Admin' },
     { slug: 'learner-rights-focal-person', name: 'Learner Right Protection Focal Person' }
   ];
 
@@ -181,7 +181,7 @@
     formErrors = {};
 
     if (divisionRequired && !form.division_id) {
-      formErrors = { division_id: ['A division is required for the Division User Administrator role.'] };
+      formErrors = { division_id: ['A division is required for the Division Admin role.'] };
       return;
     }
 
@@ -256,7 +256,7 @@
     formErrors = {};
 
     if (divisionRequired && !form.division_id) {
-      formErrors = { division_id: ['A division is required for the Division User Administrator role.'] };
+      formErrors = { division_id: ['A division is required for the Division Admin role.'] };
       return;
     }
 
@@ -635,7 +635,7 @@
           {#if fe('division_id')}
             <p class="text-xs text-error mt-1">{fe('division_id')}</p>
           {:else if divisionRequired}
-            <p class="text-xs text-base-content/40 mt-1">Required for the Division User Administrator role.</p>
+            <p class="text-xs text-base-content/40 mt-1">Required for the Division Admin role.</p>
           {/if}
         </div>
 
@@ -778,7 +778,7 @@
           {#if fe('division_id')}
             <p class="text-xs text-error mt-1">{fe('division_id')}</p>
           {:else if divisionRequired}
-            <p class="text-xs text-base-content/40 mt-1">Required for the Division User Administrator role.</p>
+            <p class="text-xs text-base-content/40 mt-1">Required for the Division Admin role.</p>
           {/if}
         </div>
 

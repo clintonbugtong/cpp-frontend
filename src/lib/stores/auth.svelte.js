@@ -26,7 +26,7 @@ class AuthState {
   // Role dashboards
   roleDashboards = {
     'Super Admin': '/admin/super-admin/dashboard',
-    'Division User Administrator': '/admin/lis/dashboard',
+    'Division Admin': '/admin/lis/dashboard',
     'Learner Right Protection Focal Person': '/admin/lrp/dashboard'
   };
 
@@ -35,7 +35,7 @@ class AuthState {
   // Every other role is scoped to its own section only.
   rolePathPrefixes = {
     'Super Admin': ['/admin/'],
-    'Division User Administrator': ['/admin/lis/'],
+    'Division Admin': ['/admin/lis/'],
     // Covers school/division/regional-level Focal Persons alike — scope
     // within this section is resolved server-side from the account's own
     // school_id/division_id, not by a separate frontend role.
@@ -45,7 +45,7 @@ class AuthState {
   // Display names
   roleDisplayNames = {
     'Super Admin': 'Super Admin',
-    'Division User Administrator': 'Division Dashboard',
+    'Division Admin': 'Division Dashboard',
     'Learner Right Protection Focal Person': 'LRP Dashboard'
   };
 
@@ -54,12 +54,13 @@ class AuthState {
     'Super Admin': {
       canAccessAllDashboards: true,
       canManageUsers: true,
+      canManageSchools: true,
       canViewAuditLogs: true,
       canManageSettings: true,
       scope: 'all', // all divisions and schools
       accessibleDashboards: [
         'Super Admin',
-        'Division User Administrator',
+        'Division Admin',
         'Learner Right Protection Focal Person'
       ],
       menuItems: [
@@ -69,20 +70,26 @@ class AuthState {
         { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' },
         { name: 'Manage FAQs', path: '/admin/lrp/faqs', icon: 'faq' },
         { name: 'User Management', path: '/admin/super-admin/users', icon: 'users' },
+        { name: 'School Management', path: '/admin/super-admin/schools', icon: 'building' },
+        { name: 'Report Compliance', path: '/admin/super-admin/compliance', icon: 'clipboard-check' },
+        { name: 'Incident Summary', path: '/admin/super-admin/incident-summary', icon: 'chart-bar' },
         { name: 'Audit Logs', path: '/admin/super-admin/logs', icon: 'clipboard' },
         // { name: 'Settings', path: '/admin/super-admin/settings', icon: 'cog' }
       ]
     },
-    'Division User Administrator': {
+    'Division Admin': {
       canAccessAllDashboards: false,
       canManageUsers: true,
+      canManageSchools: true,
       canViewAuditLogs: true,
       canManageSettings: false,
       scope: 'division', // limited to own division
-      accessibleDashboards: ['Division User Administrator'],
+      accessibleDashboards: ['Division Admin'],
       menuItems: [
-        { name: 'Division Dashboard', role: 'Division User Administrator', path: '/admin/lis/dashboard', icon: 'document' },
+        { name: 'Division Dashboard', role: 'Division Admin', path: '/admin/lis/dashboard', icon: 'document' },
         { name: 'User Management', path: '/admin/lis/users', icon: 'users' },
+        { name: 'School Management', path: '/admin/lis/schools', icon: 'building' },
+        { name: 'Report Compliance', path: '/admin/lis/compliance', icon: 'clipboard-check' },
         { name: 'Audit Logs', path: '/admin/lis/logs', icon: 'clipboard' }
       ]
     },
@@ -102,6 +109,11 @@ class AuthState {
         { name: 'Dashboard', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/dashboard', icon: 'dashboard' },
         { name: 'Intake Sheets', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
         { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' },
+        // Only a school account files the school's monthly incident report;
+        // division/regional accounts monitor every school's compliance instead.
+        { name: 'Monthly Report', path: '/admin/lrp/school-report', icon: 'calendar', schoolOnly: true },
+        { name: 'Report Compliance', path: '/admin/lrp/compliance', icon: 'clipboard-check', notSchool: true },
+        { name: 'Incident Summary', path: '/admin/lrp/incident-summary', icon: 'chart-bar' },
         // FAQ content management is regional-only — not every Focal Person
         // account should see this, even though the role spans all 3 levels.
         { name: 'Manage FAQs', path: '/admin/lrp/faqs', icon: 'faq', regionalOnly: true }
@@ -259,6 +271,13 @@ class AuthState {
     return perms?.canManageUsers || false;
   }
 
+  // Schools are managed by Super Admin and Division Admin only — not Focal
+  // Person, which is scoped to case work, not site reference data.
+  canManageSchools() {
+    const perms = this.getPermissions();
+    return perms?.canManageSchools || false;
+  }
+
   // Check if user can view audit logs
   canViewAuditLogs() {
     const perms = this.getPermissions();
@@ -290,6 +309,8 @@ class AuthState {
           // Some items (e.g. FAQ management) only apply to a regional-level
           // account even though the role itself spans school/division/regional.
           if (item.regionalOnly && this.user?.organizationLevel !== 'regional') continue;
+          if (item.schoolOnly && this.user?.organizationLevel !== 'school') continue;
+          if (item.notSchool && this.user?.organizationLevel === 'school') continue;
           if (item.role && seenRoles.has(item.role)) continue;
           if (item.role) seenRoles.add(item.role);
           if (seenPaths.has(item.path)) continue;
@@ -368,6 +389,11 @@ class AuthState {
   // wording can match their context (e.g. "Regional Office" vs "Regional").
   getOrgLabel() {
     return this.user?.school?.name || this.user?.division?.name || null;
+  }
+
+  /** A school's shared Focal Person account (files the monthly report). */
+  isSchoolAccount() {
+    return this.hasRole('Learner Right Protection Focal Person') && this.user?.organizationLevel === 'school';
   }
 
   // ── Learner Rights & Protection Intake Sheets ────────────────────────────

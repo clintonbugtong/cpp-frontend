@@ -106,10 +106,10 @@
     schoolResults = [];
   }
 
-  // A Division User Administrator cannot assign Super Admin — only roles
+  // A Division Admin cannot assign Super Admin — only roles
   // scoped to their own division.
   const ROLE_OPTIONS = [
-    { slug: 'division-user-admin', name: 'Division User Administrator' },
+    { slug: 'division-user-admin', name: 'Division Admin' },
     { slug: 'learner-rights-focal-person', name: 'Learner Right Protection Focal Person' }
   ];
 

@@ -270,6 +270,38 @@ class ApiClient {
 		return this.request(endpoint, options);
 	}
 
+	/**
+	 * Fetch a file (e.g. a generated PDF) with the auth header and hand it to
+	 * the browser as a download. Retries once after refreshing an expired token.
+	 * @param {string} endpoint @param {Record<string, any>} params @param {string} fallbackName
+	 */
+	async download(endpoint, params = {}, fallbackName = 'download.pdf') {
+		const qs = new URLSearchParams(params).toString();
+		const url = `${this.baseURL}${endpoint}${qs ? `?${qs}` : ''}`;
+		const go = () => fetch(url, { headers: { Authorization: `Bearer ${this.accessToken}`, Accept: 'application/pdf, application/json' } });
+
+		let response = await go();
+		if (response.status === 401 && (await this.refreshAccessToken())) response = await go();
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			const error = new Error(errorData.error || errorData.message || `Could not generate the file (HTTP ${response.status})`);
+			/** @type {any} */ (error).status = response.status;
+			throw error;
+		}
+
+		const disposition = response.headers.get('Content-Disposition') || '';
+		const match = disposition.match(/filename="?([^";]+)"?/);
+		const blob = await response.blob();
+		const href = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = href;
+		a.download = match ? match[1] : fallbackName;
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		setTimeout(() => URL.revokeObjectURL(href), 10000);
+	}
+
 	async upload(endpoint, formData) {
 		const url = `${this.baseURL}${endpoint}`;
 		const headers = { Accept: 'application/json' };
