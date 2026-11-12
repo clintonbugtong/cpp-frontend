@@ -22,7 +22,7 @@ class SchoolReportsService {
 		try { return ok(await api.get('/school-reports/my')); } catch (err) { return fail(err); }
 	}
 
-	/** @param {{period_year: number, period_month: number, declaration: 'zero_incident'|'with_incidents', remarks?: string}} payload */
+	/** @param {{period_year: number, period_month: number, declaration?: 'zero_incident', remarks?: string}} payload */
 	async submit(payload) {
 		try { return ok(await api.post('/school-reports', payload)); } catch (err) { return fail(err); }
 	}
@@ -67,6 +67,10 @@ class SchoolReportsService {
 	async intakeSheetPdf(id) {
 		try { await api.download(`/intake-sheets/${id}/pdf`, {}, `intake-sheet-${id}.pdf`); return ok(); } catch (err) { return fail(err); }
 	}
+	/** LRP Concern Incident Report Form — same case, separate document. @param {any} id */
+	async incidentReportPdf(id) {
+		try { await api.download(`/intake-sheets/${id}/incident-report-pdf`, {}, `incident-report-${id}.pdf`); return ok(); } catch (err) { return fail(err); }
+	}
 	/** @param {any} id */
 	async learnerReportPdf(id) {
 		try { await api.download(`/learner-reports/${id}/pdf`, {}, `learner-report-${id}.pdf`); return ok(); } catch (err) { return fail(err); }
@@ -88,7 +92,7 @@ export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'Jun
 /** Status → label + DaisyUI badge class, shared by the compliance views. */
 export const REPORT_STATUS = /** @type {Record<string, {label: string, badge: string}>} */ ({
 	zero_incident: { label: 'Zero incident', badge: 'badge-success' },
-	with_incidents: { label: 'With incidents', badge: 'badge-warning' },
+	with_incidents: { label: 'With recorded incidents', badge: 'badge-warning' },
 	no_report: { label: 'No report', badge: 'badge-error' },
 	partial: { label: 'Incomplete', badge: 'badge-warning badge-outline' },
 	upcoming: { label: 'Not yet due', badge: 'badge-ghost' }

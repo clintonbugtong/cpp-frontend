@@ -65,7 +65,6 @@
     partial: (s) => s.status === 'partial',
     zero_incident: (s) => s.status === 'zero_incident',
     with_incidents: (s) => s.status === 'with_incidents',
-    discrepancy: (s) => s.discrepancy,
     no_account: (s) => !s.has_account
   };
 
@@ -85,7 +84,6 @@
     ...(periodType === 'quarterly' ? [{ key: 'partial', label: 'Incomplete', n: s.partial, tone: 'warning' }] : []),
     { key: 'zero_incident', label: 'Zero incident', n: s.zero_incident, tone: 'success' },
     { key: 'with_incidents', label: 'With incidents', n: s.with_incidents, tone: 'warning' },
-    { key: 'discrepancy', label: 'Discrepancy', n: s.discrepancies, tone: 'error' },
     { key: 'no_account', label: 'No account', n: s.without_account }
   ] : []);
 
@@ -110,6 +108,8 @@
 
   /** @param {string} iso */
   const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' }) : '';
+  /** @param {number} n */
+  const incLabel = (n) => `${n} incident${n === 1 ? '' : 's'}`;
   /** @param {number} n */
   const pct = (n) => (s?.schools ? (n / s.schools) * 100 : 0);
 </script>
@@ -195,7 +195,7 @@
         </div>
         <p class="text-xs text-base-content/60">
           {s.incidents} incident{s.incidents === 1 ? '' : 's'} recorded in this period.
-          {#if s.discrepancies}<span class="text-error font-medium">{s.discrepancies} school{s.discrepancies === 1 ? '' : 's'} filed before later incidents were recorded.</span>{/if}
+          Months with recorded incidents count as reported automatically.
           {#if s.without_account}{s.without_account} school{s.without_account === 1 ? ' has' : 's have'} no account yet — create them in School Management.{/if}
         </p>
       </div>
@@ -223,15 +223,16 @@
               <p class="font-medium text-sm leading-snug">{r.school_name}</p>
               <p class="text-xs text-base-content/50">{r.school_id_number}{multiDivision ? ` · ${r.division?.name ?? ''}` : ''}{r.has_account ? '' : ' · no account'}</p>
             </button>
-            <span class="badge badge-sm shrink-0 {st.badge}">{st.label}</span>
+            <span class="badge badge-sm shrink-0 {st.badge}">{r.status === 'with_incidents' ? incLabel(r.live_incidents) : st.label}</span>
           </div>
           <div class="flex flex-wrap gap-1 mt-2">
             {#each r.months as m}
               {@const ms = reportStatus(m.status)}
-              <span class="badge badge-xs {ms.badge}" title={ms.label}>{m.label.split(' ')[0]}{m.status === 'with_incidents' ? ` · ${m.submitted_count}` : ''}{m.discrepancy ? ' ⚠' : ''}</span>
+              <span class="badge badge-xs {ms.badge}" title={ms.label}>{m.label.split(' ')[0]}{m.status === 'with_incidents' ? ` · ${m.incident_count}` : ''}</span>
             {/each}
             <span class="text-xs text-base-content/60 ml-auto">{r.live_incidents} recorded</span>
           </div>
+          {#if r.filed_by.length}<p class="text-xs text-base-content/60 mt-1">Filed by {r.filed_by.join(', ')}</p>{/if}
         </div>
       {:else}
         <p class="text-center text-sm text-base-content/50 py-8">No schools match.</p>
@@ -249,7 +250,7 @@
               {#each data.schools[0]?.months ?? [] as m}<th class="text-center">{m.label}</th>{/each}
               <th class="text-right">Recorded</th>
               <th>Status</th>
-              <th>Handled by</th>
+              <th>Filed by</th>
             </tr>
           </thead>
           <tbody>
@@ -257,22 +258,25 @@
               {@const st = reportStatus(r.status)}
               <tr class="hover">
                 <td>
-                  <p class="font-medium">{r.school_name}</p>
+                  <button class="font-medium text-left link link-hover" title="Account and personnel history" onclick={() => openPersonnel(r)}>{r.school_name}</button>
                   <p class="text-xs text-base-content/50">{r.school_id_number}{#if !r.has_account}<span class="text-warning"> · no account</span>{/if}</p>
                 </td>
                 {#if multiDivision}<td class="text-sm text-base-content/70">{r.division?.name ?? '—'}</td>{/if}
                 {#each r.months as m}
                   {@const ms = reportStatus(m.status)}
                   <td class="text-center">
-                    <span class="badge badge-sm {ms.badge}">{m.status === 'with_incidents' ? m.submitted_count : ms.label}</span>
+                    <span class="badge badge-sm {ms.badge}" title={m.source === 'recorded' ? 'Counted automatically from recorded incidents' : ''}>{m.status === 'with_incidents' ? incLabel(m.incident_count) : ms.label}</span>
                     {#if m.submitted_at}<p class="text-[10px] text-base-content/50 mt-0.5">{fmtDate(m.submitted_at)}</p>{/if}
-                    {#if m.discrepancy}<p class="text-[10px] text-error" title="Filed {m.submitted_count}, now {m.live_count} on record">⚠ now {m.live_count}</p>{/if}
                   </td>
                 {/each}
                 <td class="text-right tabular-nums">{r.live_incidents}</td>
-                <td><span class="badge badge-sm {st.badge}">{st.label}</span></td>
+                <td><span class="badge badge-sm {st.badge}">{r.status === 'with_incidents' ? incLabel(r.live_incidents) : st.label}</span></td>
                 <td>
-                  <button class="link link-hover text-sm text-left" onclick={() => openPersonnel(r)}>{r.current_personnel ?? 'None recorded'}</button>
+                  {#if r.filed_by.length}
+                    <span class="text-sm">{r.filed_by.join(', ')}</span>
+                  {:else}
+                    <span class="text-sm text-base-content/40">—</span>
+                  {/if}
                 </td>
               </tr>
             {:else}
