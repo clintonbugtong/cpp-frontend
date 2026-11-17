@@ -1,9 +1,10 @@
 <script>
+  import { fieldErrors } from '$lib/actions/field-errors.js';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { authState } from '$lib/stores/auth.svelte.js';
   import { schoolReportsService, reportStatus } from '$lib/api/school-reports.js';
-  import PersonnelHistory from '$lib/components/PersonnelHistory.svelte';
+  import SchoolAccountsPanel from '$lib/components/SchoolAccountsPanel.svelte';
 
   /** @type {any} */
   let data = $state(null);
@@ -18,6 +19,8 @@
   let remarks = $state('');
   let saving = $state(false);
   let fileError = $state('');
+  /** @type {Record<string, string[]>} */
+  let fileErrors = $state({});
 
   onMount(() => {
     if (!authState.isSchoolAccount()) { goto('/admin/lrp/dashboard'); return; }
@@ -37,7 +40,6 @@
   // Months with recorded incidents count as reported automatically, so only
   // past months with nothing recorded and no zero report are outstanding.
   const overdue = $derived(months.filter((m) => !m.is_current && m.status === 'no_report'));
-  const hasPersonnel = $derived(!!data?.current_personnel);
 
   // Days left in the current month, Philippine time.
   const daysLeft = $derived.by(() => {
@@ -50,12 +52,12 @@
   function openFile(m) {
     filing = m;
     remarks = m.report?.remarks ?? '';
-    fileError = '';
+    fileError = ''; fileErrors = {};
     fileDialog?.showModal();
   }
 
   async function submit() {
-    saving = true; fileError = '';
+    saving = true; fileError = ''; fileErrors = {};
     const res = await schoolReportsService.submit({
       period_year: filing.period_year, period_month: filing.period_month,
       declaration: 'zero_incident', remarks: remarks || undefined
@@ -66,13 +68,20 @@
       notice = `${filing.period_label} zero incident report ${filing.report ? 'updated' : 'submitted'}.`;
       await load();
     } else {
-      const v = res.validationErrors || {};
-      fileError = Object.values(v).flat().join(' ') || res.error || 'Could not submit.';
+      fileErrors = res.validationErrors || {};
+      // Errors on a field shown in the dialog go under it; anything else (the period, the declaration) stays in the banner.
+      const elsewhere = Object.entries(fileErrors).filter(([k]) => k !== 'remarks').flatMap(([, m]) => m);
+      fileError = elsewhere.join(' ') || (fileErrors.remarks ? 'Please fix the errors shown below.' : res.error || 'Could not submit.');
     }
   }
 
   /** @param {string} iso */
   const fmtDateTime = (iso) => iso ? new Date(iso).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+
+  /** Who filed a zero report: the filer's service record, else their account name. @param {any} r */
+  const filer = (r) => r?.submitted_by_personnel?.full_name
+    || (r?.submitted_by ? `${r.submitted_by.first_name ?? ''} ${r.submitted_by.last_name ?? ''}`.trim() : '')
+    || '—';
 
   /** @param {number} n */
   const incLabel = (n) => `${n} incident${n === 1 ? '' : 's'}`;
@@ -98,13 +107,6 @@
   {:else if loadError}
     <div class="alert alert-error"><span>{loadError}</span></div>
   {:else if data}
-    {#if !hasPersonnel}
-      <div class="rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm">
-        <p class="font-semibold">Before you can file a zero incident report: record who is handling this account.</p>
-        <p class="text-base-content/70 mt-1">This is a shared school account. Use the "Who handles this account" panel to record your name — it's kept on file so the division knows who submitted each report.</p>
-      </div>
-    {/if}
-
     <!-- Current month -->
     {#if currentMonth}
       <div class="card bg-base-100 border border-base-200 shadow-sm">
@@ -118,14 +120,14 @@
                   <span class="text-base-content/60 ml-1">counted as reported automatically — nothing to file</span></p>
               {:else if currentMonth.status === 'zero_incident'}
                 <p class="text-sm mt-1"><span class="badge badge-success">Zero incident</span>
-                  <span class="text-base-content/60 ml-1">filed {fmtDateTime(currentMonth.report.submitted_at)} by {currentMonth.report.submitted_by_personnel?.full_name ?? '—'}</span></p>
+                  <span class="text-base-content/60 ml-1">filed {fmtDateTime(currentMonth.report.submitted_at)} by {filer(currentMonth.report)}</span></p>
               {:else}
                 <p class="text-sm mt-1"><span class="badge badge-error badge-outline">Not yet reported</span>
                   <span class="text-base-content/60 ml-1">{daysLeft === 0 ? 'Last day today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}</span></p>
               {/if}
             </div>
             {#if currentMonth.status !== 'with_incidents'}
-              <button class="btn btn-primary btn-sm" disabled={!hasPersonnel} onclick={() => openFile(currentMonth)}>
+              <button class="btn btn-primary btn-sm" onclick={() => openFile(currentMonth)}>
                 {currentMonth.report ? 'Update zero report' : 'File zero incident report'}
               </button>
             {/if}
@@ -159,7 +161,7 @@
         <p class="text-xs text-base-content/70">No incidents were recorded and no zero incident report was filed, so the division and regional offices see "No report". File them now:</p>
         <div class="flex flex-wrap gap-2 mt-2">
           {#each overdue as m}
-            <button class="btn btn-xs btn-outline btn-error" disabled={!hasPersonnel} onclick={() => openFile(m)}>{m.period_label}</button>
+            <button class="btn btn-xs btn-outline btn-error" onclick={() => openFile(m)}>{m.period_label}</button>
           {/each}
         </div>
       </div>
@@ -180,7 +182,7 @@
                     {#if m.status === 'with_incidents'}
                       {m.live_counts.intake_sheets} intake sheet{m.live_counts.intake_sheets === 1 ? '' : 's'} · {m.live_counts.learner_reports} learner report{m.live_counts.learner_reports === 1 ? '' : 's'} · counted automatically
                     {:else if m.status === 'zero_incident'}
-                      Filed {fmtDateTime(m.report.submitted_at)} · {m.report.submitted_by_personnel?.full_name ?? '—'}
+                      Filed {fmtDateTime(m.report.submitted_at)} · {filer(m.report)}
                     {:else}
                       Nothing recorded, no zero incident report filed
                     {/if}
@@ -193,7 +195,7 @@
                     <span class="badge badge-sm {st.badge}">{m.status === 'with_incidents' ? incLabel(m.incident_count) : st.label}</span>
                   {/if}
                   {#if m.status !== 'with_incidents'}
-                    <button class="btn btn-ghost btn-xs" disabled={!hasPersonnel} onclick={() => openFile(m)}>{m.report ? 'Update' : 'File'}</button>
+                    <button class="btn btn-ghost btn-xs" onclick={() => openFile(m)}>{m.report ? 'Update' : 'File'}</button>
                   {/if}
                 </div>
               </li>
@@ -205,7 +207,8 @@
       <!-- Personnel -->
       <div class="lg:col-span-2 card bg-base-100 border border-base-200 shadow-sm">
         <div class="card-body p-4 sm:p-5">
-          <PersonnelHistory personnel={data.personnel} onchange={load} />
+          <SchoolAccountsPanel data={{ school: data.school, positions: data.positions, history: data.history, can_manage: false }} />
+          <p class="text-xs text-base-content/50 mt-3">Moving out or a new School Head / Guidance Counselor? Your division office closes and creates accounts.</p>
         </div>
       </div>
     </div>
@@ -213,7 +216,7 @@
 </div>
 
 <dialog bind:this={fileDialog} class="modal modal-bottom sm:modal-middle">
-  <div class="modal-box max-w-lg">
+  <div class="modal-box max-w-lg" use:fieldErrors={{ errors: fileErrors }}>
     {#if filing}
       <h3 class="font-bold text-lg">Zero incident report — {filing.period_label}</h3>
       <div class="mt-3 rounded-lg border border-success/40 bg-success/5 p-3 text-sm">
@@ -223,10 +226,10 @@
 
       <div class="form-control mt-3">
         <label class="label py-1" for="sr-remarks"><span class="label-text text-xs">Remarks (optional)</span></label>
-        <textarea id="sr-remarks" class="textarea textarea-bordered text-sm" rows="2" maxlength="2000" bind:value={remarks}></textarea>
+        <textarea id="sr-remarks" data-field="remarks" class="textarea textarea-bordered text-sm" rows="2" maxlength="2000" bind:value={remarks}></textarea>
       </div>
 
-      <p class="text-xs text-base-content/60 mt-2">Submitting as <strong>{data?.current_personnel?.full_name}</strong>. Not you? Record the handover first.</p>
+      <p class="text-xs text-base-content/60 mt-2">Submitting as <strong>{data?.me?.full_name}</strong>{data?.me?.position ? ` (${data.me.position})` : ''}.</p>
       {#if fileError}<div class="alert alert-error text-sm mt-3"><span>{fileError}</span></div>{/if}
 
       <div class="modal-action">

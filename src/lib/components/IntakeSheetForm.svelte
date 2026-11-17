@@ -1,4 +1,5 @@
 <script>
+  import { fieldErrors, focusField, humanizeMessage } from '$lib/actions/field-errors.js';
   import { goto } from '$app/navigation';
   import { intakeSheetsService } from '$lib/api/intake-sheets.js';
   import { learnerReportsService } from '$lib/api/learner-reports.js';
@@ -28,7 +29,7 @@
     { n: 1, label: 'Intake Info' },
     { n: 2, label: 'People Involved' },
     { n: 3, label: 'Incident Details' },
-    { n: 4, label: 'Actions & Referrals' },
+    { n: 4, label: 'Actions & Recommendations' },
     { n: 5, label: 'Review & Submit' }
   ];
   let currentStep = $state(1);
@@ -36,6 +37,8 @@
   let loading = $state(isEdit || isFromReport);
   let submitting = $state(false);
   let submitError = $state('');
+  let noFullEdit = $state(false);
+  let noFullEditReason = $state('');
   /** @type {Record<string,string[]>} */
   let submitValidationErrors = $state({});
   /** Set once loadFromReport() succeeds — used for the "prefilled from" banner. */
@@ -44,21 +47,27 @@
 
   // ── Step 1: Intake info ──────────────────────────────────────────────────
   const isRegional = authState.user?.organizationLevel === 'regional';
+  // A school account can only file for its own school, so the school and its
+  // division come from the account. (Its own division is empty — the division
+  // belongs to the school.)
+  const ownSchool = authState.user?.organizationLevel === 'school' ? authState.user?.school : null;
+  const ownDivisionId = authState.user?.division?.id ?? ownSchool?.division_id ?? authState.user?.effectiveDivisionId ?? null;
+  const ownDivisionName = authState.user?.division?.name || ownSchool?.division_name || '';
   let header = $state({
-    division_id: authState.user?.division?.id ? String(authState.user.division.id) : '',
-    school_id: '',
+    division_id: ownDivisionId ? String(ownDivisionId) : '',
+    school_id: ownSchool?.id ? String(ownSchool.id) : '',
     date_of_intake: new Date().toISOString().slice(0, 10),
     nature_of_case: '',
     nature_of_case_other: ''
   });
   /** @type {any[]} */
   let divisions = $state([]);
-  let schoolQuery = $state('');
+  let schoolQuery = $state(ownSchool?.name ?? '');
   /** @type {any[]} */
   let schoolResults = $state([]);
   let schoolSearching = $state(false);
   /** @type {any} */
-  let selectedSchool = $state(null);
+  let selectedSchool = $state(ownSchool ? { school_id: ownSchool.id, name: ownSchool.name } : null);
 
   // ── Step 2: People involved ──────────────────────────────────────────────
   function emptyPerson() {
@@ -88,10 +97,23 @@
   }
   let incidents = $state([emptyIncident()]);
 
-  // ── Step 4: Actions / recommendations / referrals ───────────────────────
+  // Name of the learner-victim's adviser (Annex E, I.A).
+  let adviserName = $state('');
+
+  // ── Step 4: Initial actions taken / Recommendations & next steps ────────
   let actions = $state([{ action_taken: '' }]);
   let recommendations = $state([{ recommendation: '' }]);
-  let referrals = $state([{ referred_to: '', reason: '' }]);
+  // V. "Referral: YES / NO" — one answer per intake sheet. '' = not answered.
+  let referral = $state({ answer: '', referred_to: '', referral_reason: '' });
+
+  function referralPayload() {
+    const yes = referral.answer === 'yes';
+    return {
+      is_referred: referral.answer === '' ? null : yes,
+      referred_to: yes ? referral.referred_to.trim() : null,
+      referral_reason: yes ? referral.referral_reason.trim() : null
+    };
+  }
 
   $effect(() => {
     if (isRegional) {
@@ -164,6 +186,22 @@
       return;
     }
     const data = result.data;
+    // Full editing is limited to the creator and the school's own accounts;
+    // division/regional focal persons update the four sections from the
+    // intake sheet's page instead.
+    if (data.permissions && !data.permissions.can_edit_all) {
+      const where = { school: 'School', division: 'Division Office', regional: 'Regional Office' }[/** @type {'school'|'division'|'regional'} */ (data.routed_to)] ?? 'another office';
+      noFullEditReason = data.status === 'resolved'
+        ? 'This intake sheet is resolved and read-only.'
+        : !data.permissions.holds_sheet
+          ? `It has been forwarded and is now with the ${where}. Your office can't change it until it is forwarded back to your office.`
+          : data.permissions.actions?.review
+            ? 'Open the intake sheet and click "Review" first — editing is enabled once you have reviewed it.'
+            : 'Only the person who created it or a user from the same school can change the case details and the people involved. Division and regional focal persons can update Incident Details, Initial Actions Taken and Recommendations / Next Steps (including the Referral) from the intake sheet\'s page.';
+      noFullEdit = true;
+      loading = false;
+      return;
+    }
     sheetId = data.intake_sheet_id;
     loadedIsDraft = !!data.is_draft;
 
@@ -213,8 +251,12 @@
     recommendations = (data.recommendations || []).map((/** @type {any} */ r) => ({ recommendation: r.recommendation }));
     if (recommendations.length === 0) recommendations = [{ recommendation: '' }];
 
-    referrals = (data.referrals || []).map((/** @type {any} */ r) => ({ referred_to: r.referred_to, reason: r.reason }));
-    if (referrals.length === 0) referrals = [{ referred_to: '', reason: '' }];
+    adviserName = data.adviser_name || '';
+    referral = {
+      answer: data.is_referred === true ? 'yes' : data.is_referred === false ? 'no' : '',
+      referred_to: data.referred_to || '',
+      referral_reason: data.referral_reason || ''
+    };
 
     loading = false;
   }
@@ -268,24 +310,30 @@
   function addRecommendation() { recommendations = [...recommendations, { recommendation: '' }]; }
   /** @param {number} i */
   function removeRecommendation(i) { recommendations = recommendations.filter((_, idx) => idx !== i); }
-  function addReferral() { referrals = [...referrals, { referred_to: '', reason: '' }]; }
-  /** @param {number} i */
-  function removeReferral(i) { referrals = referrals.filter((_, idx) => idx !== i); }
 
   // ── Step navigation ──────────────────────────────────────────────────────
   /** @param {number} step */
+  // Returns { field, message } — the field key matches the backend's, so the
+  // message lands under the same input either way.
   function stepError(step) {
+    /** @param {string} field @param {string} message */
+    const e = (field, message) => ({ field, message });
     if (step === 1) {
-      if (!header.division_id) return 'Select a division.';
-      if (!header.school_id) return 'Search for and select a school.';
-      if (!header.date_of_intake) return 'Set the date of intake.';
-      if (!header.nature_of_case) return 'Select the nature of the case.';
-      if (header.nature_of_case === 'OTHERS' && !header.nature_of_case_other.trim()) return 'Specify the nature of the case.';
+      if (!header.division_id) return e('division_id', 'Select a division.');
+      if (!header.school_id) return e('school_id', 'Search for and select a school.');
+      if (!header.date_of_intake) return e('date_of_intake', 'Set the date of intake.');
+      if (!header.nature_of_case) return e('nature_of_case', 'Select the nature of the case.');
+      if (header.nature_of_case === 'OTHERS' && !header.nature_of_case_other.trim()) return e('nature_of_case_other', 'Specify the nature of the case.');
     }
     if (step === 2) {
-      if (!learner.first_name || !learner.last_name) return "Enter the learner-victim's first and last name.";
+      if (!learner.first_name?.trim()) return e('persons.0.first_name', "Enter the learner-victim's first name.");
+      if (!learner.last_name?.trim()) return e('persons.0.last_name', "Enter the learner-victim's last name.");
     }
-    return '';
+    if (step === 4 && referral.answer === 'yes') {
+      if (!referral.referred_to.trim()) return e('referred_to', 'Referral is YES — say who the case was referred to.');
+      if (!referral.referral_reason.trim()) return e('referral_reason', 'Referral is YES — give the reason for the referral.');
+    }
+    return null;
   }
 
   /**
@@ -311,7 +359,7 @@
       return result;
     }
     if (currentStep === 2) {
-      return intakeSheetsService.updateIntakeSheet(sheetId, { persons: buildPersons() });
+      return intakeSheetsService.updateIntakeSheet(sheetId, { persons: buildPersons(), adviser_name: adviserName.trim() || null });
     }
     if (currentStep === 3) {
       return intakeSheetsService.updateIntakeSheet(sheetId, {
@@ -322,7 +370,7 @@
       return intakeSheetsService.updateIntakeSheet(sheetId, {
         actions_taken: actions.filter((a) => a.action_taken.trim()),
         recommendations: recommendations.filter((r) => r.recommendation.trim()),
-        referrals: referrals.filter((r) => r.referred_to.trim() || r.reason.trim())
+        ...referralPayload()
       });
     }
     return { success: true };
@@ -330,7 +378,7 @@
 
   async function next() {
     const err = stepError(currentStep);
-    if (err) { submitError = err; return; }
+    if (err) { submitError = err.message; submitValidationErrors = { [err.field]: [err.message] }; return; }
     submitError = '';
     submitValidationErrors = {};
 
@@ -381,10 +429,11 @@
       nature_of_case: header.nature_of_case,
       nature_of_case_other: header.nature_of_case === 'OTHERS' ? header.nature_of_case_other : null,
       persons: buildPersons(),
+      adviser_name: adviserName.trim() || null,
       detailed_incidents: incidents.filter((i) => i.date_of_incident || i.description),
       actions_taken: actions.filter((a) => a.action_taken.trim()),
       recommendations: recommendations.filter((r) => r.recommendation.trim()),
-      referrals: referrals.filter((r) => r.referred_to.trim() || r.reason.trim())
+      ...referralPayload()
     };
   }
 
@@ -425,6 +474,38 @@
     submitting = false;
   }
 
+  // ── data-field keys, matching the backend's "persons.3.first_name" etc. ──
+  // The payload only sends filled-in rows, so a row's index there can differ
+  // from its position on screen; these replay the same filtering.
+  /** @param {any} person @param {string} field */
+  function pf(person, field) {
+    let idx = 0;
+    if (person === learner) return `persons.0.${field}`;
+    idx = 1;
+    for (const role of /** @type {const} */ (['MOTHER', 'FATHER', 'GUARDIAN'])) {
+      if (!optional[role].included) continue;
+      if (optional[role] === person) return `persons.${idx}.${field}`;
+      idx++;
+    }
+    for (const p of [...complainants, ...allegedOffenders]) {
+      if (!(p.first_name || p.last_name)) { if (p === person) return null; continue; }
+      if (p === person) return `persons.${idx}.${field}`;
+      idx++;
+    }
+    return null;
+  }
+  /** @param {any[]} rows @param {(r: any) => boolean} kept @param {any} row @param {string} group @param {string} field */
+  function rowKey(rows, kept, row, group, field) {
+    const idx = rows.filter(kept).indexOf(row);
+    return idx < 0 ? null : `${group}.${idx}.${field}`;
+  }
+  /** @param {any} inc @param {string} field */
+  const incKey = (inc, field) => rowKey(incidents, (i) => i.date_of_incident || i.description, inc, 'detailed_incidents', field);
+  /** @param {any} a */
+  const actKey = (a) => rowKey(actions, (x) => x.action_taken.trim(), a, 'actions_taken', 'action_taken');
+  /** @param {any} r */
+  const recKey = (r) => rowKey(recommendations, (x) => x.recommendation.trim(), r, 'recommendations', 'recommendation');
+
   /** @param {string} field */
   function fe(field) {
     const errors = submitValidationErrors[field];
@@ -443,9 +524,10 @@
     relation_to_learner_victim: 'Relation to Learner-Victim',
     detailed_incidents: 'Incident', date_of_incident: 'Date of Incident', description: 'Description',
     is_estimated_date: 'Estimated Date',
-    actions_taken: 'Action Taken', action_taken: 'Action Taken',
-    recommendations: 'Recommendation', recommendation: 'Recommendation',
-    referrals: 'Referral', referred_to: 'Referred To', reason: 'Reason'
+    actions_taken: 'Initial Action Taken', action_taken: 'Initial Action Taken',
+    recommendations: 'Recommendation / Next Step', recommendation: 'Recommendation / Next Step',
+    is_referred: 'Referral', referred_to: 'Referral To', referral_reason: 'Reason for Referral',
+    adviser_name: 'Name of Adviser'
   };
   // "Person #2" says nothing about who #2 actually is — swap in the role
   // instead wherever there's only ever one of it (Mother, Father, etc.).
@@ -461,7 +543,10 @@
     { prefix: 'detailed_incidents', step: 3 },
     { prefix: 'actions_taken', step: 4 },
     { prefix: 'recommendations', step: 4 },
-    { prefix: 'referrals', step: 4 }
+    { prefix: 'is_referred', step: 4 },
+    { prefix: 'referred_to', step: 4 },
+    { prefix: 'referral_reason', step: 4 },
+    { prefix: 'adviser_name', step: 2 }
   ];
 
   /** "persons.0.first_name" → "Learner-Victim — First Name"; "persons.3.first_name" (2nd complainant) → "Complainant #2 — First Name" */
@@ -497,34 +582,6 @@
     return hit ? hit.step : 1;
   }
 
-  // The backend returns Laravel's default English messages (e.g. "The
-  // persons.1.first_name field is required when persons is present.") —
-  // technically correct, but the raw field path and the "when ... is
-  // present" clause mean nothing to a non-technical reader, especially
-  // since the field is already named right next to this via
-  // humanizeFieldPath(). Translate the common patterns; anything that
-  // doesn't match (e.g. the hand-written "Exactly one person must be
-  // recorded..." messages) passes through unchanged since it's already fine.
-  const MESSAGE_PATTERNS = /** @type {[RegExp, string][]} */ ([
-    [/^The .+ must not be greater than (\d+) characters\.?$/i, 'Must be $1 characters or fewer.'],
-    [/^The .+ may not be greater than (\d+) characters\.?$/i, 'Must be $1 characters or fewer.'],
-    [/^The .+ must be at least (\d+) characters\.?$/i, 'Must be at least $1 characters.'],
-    [/^The .+ field is required(\s+when\s+.+)?\.?$/i, 'This field is required.'],
-    [/^The .+ must be a valid date\.?$/i, 'Enter a valid date.'],
-    [/^The .+ field must be a string\.?$/i, 'Enter valid text.'],
-    [/^The selected .+ is invalid\.?$/i, 'Please choose a valid option.'],
-    [/^The .+ must be an integer\.?$/i, 'Enter a whole number.'],
-    [/^The .+ field must be an? (boolean|number)\.?$/i, 'Enter a valid value.']
-  ]);
-  /** @param {string} msg */
-  function humanizeMessage(msg) {
-    if (!msg) return msg;
-    for (const [pattern, replacement] of MESSAGE_PATTERNS) {
-      if (pattern.test(msg)) return msg.replace(pattern, replacement);
-    }
-    return msg;
-  }
-
   let validationEntries = $derived(Object.entries(submitValidationErrors));
   // Once there's a field-by-field breakdown below, the generic top banner
   // ("Validation failed" / "Failed to save this step") is redundant — swap
@@ -537,26 +594,26 @@
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
     <div class="form-control">
       <label class="label py-1" for="{prefix}-first"><span class="label-text text-xs">First Name *</span></label>
-      <input id="{prefix}-first" type="text" class="input input-bordered input-sm" bind:value={person.first_name} required />
+      <input id="{prefix}-first" data-field={pf(person, 'first_name')} type="text" class="input input-bordered input-sm" bind:value={person.first_name} required />
     </div>
     <div class="form-control">
       <label class="label py-1" for="{prefix}-mid"><span class="label-text text-xs">Middle Name</span></label>
-      <input id="{prefix}-mid" type="text" class="input input-bordered input-sm" bind:value={person.middle_name} />
+      <input id="{prefix}-mid" data-field={pf(person, 'middle_name')} type="text" class="input input-bordered input-sm" bind:value={person.middle_name} />
     </div>
     <div class="form-control">
       <label class="label py-1" for="{prefix}-last"><span class="label-text text-xs">Last Name *</span></label>
-      <input id="{prefix}-last" type="text" class="input input-bordered input-sm" bind:value={person.last_name} required />
+      <input id="{prefix}-last" data-field={pf(person, 'last_name')} type="text" class="input input-bordered input-sm" bind:value={person.last_name} required />
     </div>
   </div>
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
     <div class="form-control">
       <label class="label py-1" for="{prefix}-bd"><span class="label-text text-xs">Birthdate</span></label>
-      <input id="{prefix}-bd" type="date" class="input input-bordered input-sm" bind:value={person.birthdate} />
+      <input id="{prefix}-bd" data-field={pf(person, 'birthdate')} type="date" class="input input-bordered input-sm" bind:value={person.birthdate} />
     </div>
     {#if !opts.hideSex}
       <div class="form-control">
         <label class="label py-1" for="{prefix}-sex"><span class="label-text text-xs">Sex</span></label>
-        <select id="{prefix}-sex" class="select select-bordered select-sm" bind:value={person.sex}>
+        <select id="{prefix}-sex" data-field={pf(person, 'sex')} class="select select-bordered select-sm" bind:value={person.sex}>
           <option value="">—</option>
           <option value="MALE">Male</option>
           <option value="FEMALE">Female</option>
@@ -565,35 +622,35 @@
     {/if}
     <div class="form-control">
       <label class="label py-1" for="{prefix}-contact"><span class="label-text text-xs">Contact Number</span></label>
-      <input id="{prefix}-contact" type="tel" inputmode="tel" class="input input-bordered input-sm" bind:value={person.contact_number} />
+      <input id="{prefix}-contact" data-field={pf(person, 'contact_number')} type="tel" inputmode="tel" class="input input-bordered input-sm" bind:value={person.contact_number} />
     </div>
   </div>
   {#if opts.showGradeSection}
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
       <div class="form-control">
         <label class="label py-1" for="{prefix}-grade"><span class="label-text text-xs">Grade</span></label>
-        <input id="{prefix}-grade" type="text" class="input input-bordered input-sm" bind:value={person.grade} />
+        <input id="{prefix}-grade" data-field={pf(person, 'grade')} type="text" class="input input-bordered input-sm" bind:value={person.grade} />
       </div>
       <div class="form-control">
         <label class="label py-1" for="{prefix}-section"><span class="label-text text-xs">Section</span></label>
-        <input id="{prefix}-section" type="text" class="input input-bordered input-sm" bind:value={person.section} />
+        <input id="{prefix}-section" data-field={pf(person, 'section')} type="text" class="input input-bordered input-sm" bind:value={person.section} />
       </div>
     </div>
   {/if}
   {#if opts.showOccupation}
     <div class="form-control mt-3">
       <label class="label py-1" for="{prefix}-occ"><span class="label-text text-xs">Occupation</span></label>
-      <input id="{prefix}-occ" type="text" class="input input-bordered input-sm" bind:value={person.occupation} />
+      <input id="{prefix}-occ" data-field={pf(person, 'occupation')} type="text" class="input input-bordered input-sm" bind:value={person.occupation} />
     </div>
   {/if}
   <div class="form-control mt-3">
     <label class="label py-1" for="{prefix}-addr"><span class="label-text text-xs">Address</span></label>
-    <input id="{prefix}-addr" type="text" class="input input-bordered input-sm" bind:value={person.address} />
+    <input id="{prefix}-addr" data-field={pf(person, 'address')} type="text" class="input input-bordered input-sm" bind:value={person.address} />
   </div>
   {#if opts.showRelation}
     <div class="form-control mt-3">
       <label class="label py-1" for="{prefix}-rel"><span class="label-text text-xs">Relation to Learner-Victim</span></label>
-      <input id="{prefix}-rel" type="text" class="input input-bordered input-sm" placeholder="e.g. Neighbor, Classmate, Homeroom Adviser" bind:value={person.relation_to_learner_victim} />
+      <input id="{prefix}-rel" data-field={pf(person, 'relation_to_learner_victim')} type="text" class="input input-bordered input-sm" placeholder="e.g. Neighbor, Classmate, Homeroom Adviser" bind:value={person.relation_to_learner_victim} />
     </div>
   {/if}
 {/snippet}
@@ -640,30 +697,40 @@
 
   {#if loading}
     <div class="text-center py-16"><span class="loading loading-spinner loading-lg"></span></div>
+  {:else if noFullEdit}
+    <div class="alert bg-warning/10 border border-warning/40 text-sm flex-col items-start gap-2">
+      <p class="font-semibold">You can't edit this intake sheet here.</p>
+      <p>{noFullEditReason}</p>
+      <a class="btn btn-sm btn-outline" href={`/admin/lrp/intake-sheets/${intakeSheetId}`}>Go to the intake sheet</a>
+    </div>
   {:else}
     {#if submitError}
-      <div class="alert alert-error text-sm flex-col items-stretch gap-2">
-        <div class="flex items-start gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 shrink-0 mt-0.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
-          </svg>
-          <span>{errorIntro}</span>
+      <!-- One child only: DaisyUI's .alert is a grid that would put the list
+           beside the message instead of under it. -->
+      <div class="alert alert-error text-sm" role="alert">
+        <div class="w-full text-left">
+          <div class="flex items-start gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 shrink-0 mt-0.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+            </svg>
+            <p class="font-medium">{errorIntro}</p>
+          </div>
+          {#if validationEntries.length}
+            <ul class="list-disc mt-2 pl-12 space-y-1">
+              {#each validationEntries as [field, messages]}
+                <li>
+                  <button type="button" class="underline underline-offset-2 font-medium" onclick={() => { currentStep = stepForField(field); focusField(document, field); }}>
+                    {humanizeFieldPath(field)}
+                  </button>: {Array.isArray(messages) ? messages.map(humanizeMessage).join(' ') : humanizeMessage(messages)}
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </div>
-        {#if validationEntries.length}
-          <ul class="list-disc list-inside pl-1 space-y-0.5">
-            {#each validationEntries as [field, messages]}
-              <li>
-                <button type="button" class="underline underline-offset-2 font-medium" onclick={() => currentStep = stepForField(field)}>
-                  {humanizeFieldPath(field)}
-                </button>: {Array.isArray(messages) ? messages.map(humanizeMessage).join(' ') : humanizeMessage(messages)}
-              </li>
-            {/each}
-          </ul>
-        {/if}
       </div>
     {/if}
 
-    <div class="card bg-base-100 shadow-sm border border-base-200 p-4 sm:p-5">
+    <div class="card bg-base-100 shadow-sm border border-base-200 p-4 sm:p-5" use:fieldErrors={{ errors: submitValidationErrors, key: currentStep, rest: false }}>
       <!-- Step 1: Intake Info -->
       {#if currentStep === 1}
         <h2 class="font-semibold text-lg mb-4">Intake Information</h2>
@@ -671,24 +738,28 @@
           <div class="form-control">
             <label class="label py-1" for="division"><span class="label-text text-xs">Division *</span></label>
             {#if isRegional}
-              <select id="division" class="select select-bordered select-sm" bind:value={header.division_id}>
+              <select id="division" data-field="division_id" class="select select-bordered select-sm" bind:value={header.division_id}>
                 <option value="">Select division…</option>
                 {#each divisions as d}
                   <option value={String(d.division_id)}>{d.name}</option>
                 {/each}
               </select>
             {:else}
-              <input type="text" class="input input-bordered input-sm" value={authState.user?.division?.name || ''} disabled />
+              <input type="text" data-field="division_id" class="input input-bordered input-sm" value={ownDivisionName} disabled />
             {/if}
           </div>
 
           <div class="form-control relative">
             <label class="label py-1" for="school"><span class="label-text text-xs">School *</span></label>
-            <input
-              id="school" type="text" class="input input-bordered input-sm"
-              placeholder="Type at least 2 characters to search…"
-              bind:value={schoolQuery} oninput={onSchoolQueryInput} autocomplete="off"
-            />
+            {#if ownSchool}
+              <input id="school" type="text" data-field="school_id" class="input input-bordered input-sm" value={ownSchool.name} disabled />
+            {:else}
+              <input
+                id="school" type="text" data-field="school_id" class="input input-bordered input-sm"
+                placeholder="Type at least 2 characters to search…"
+                bind:value={schoolQuery} oninput={onSchoolQueryInput} autocomplete="off"
+              />
+            {/if}
             {#if schoolSearching}
               <span class="text-xs text-base-content/50 mt-1">Searching…</span>
             {/if}
@@ -703,19 +774,19 @@
                 {/each}
               </ul>
             {/if}
-            {#if selectedSchool}
+            {#if selectedSchool && !ownSchool}
               <span class="text-xs text-success mt-1">Selected: {selectedSchool.name}</span>
             {/if}
           </div>
 
           <div class="form-control">
             <label class="label py-1" for="doi"><span class="label-text text-xs">Date of Intake *</span></label>
-            <input id="doi" type="date" class="input input-bordered input-sm" bind:value={header.date_of_intake} />
+            <input id="doi" data-field="date_of_intake" type="date" class="input input-bordered input-sm" bind:value={header.date_of_intake} />
           </div>
 
           <div class="form-control">
             <label class="label py-1" for="noc"><span class="label-text text-xs">Nature of Case *</span></label>
-            <select id="noc" class="select select-bordered select-sm" bind:value={header.nature_of_case}>
+            <select id="noc" data-field="nature_of_case" class="select select-bordered select-sm" bind:value={header.nature_of_case}>
               <option value="">Select nature of case…</option>
               {#each NATURE_OF_CASE_OPTIONS as opt}
                 <option value={opt.value}>{opt.label}</option>
@@ -726,7 +797,7 @@
           {#if header.nature_of_case === 'OTHERS'}
             <div class="form-control">
               <label class="label py-1" for="noc-other"><span class="label-text text-xs">Please Specify *</span></label>
-              <input id="noc-other" type="text" class="input input-bordered input-sm" bind:value={header.nature_of_case_other} />
+              <input id="noc-other" data-field="nature_of_case_other" type="text" class="input input-bordered input-sm" bind:value={header.nature_of_case_other} />
             </div>
           {/if}
         </div>
@@ -739,6 +810,10 @@
 
         <div class="divider text-sm">Learner-Victim *</div>
         {@render personFields(learner, 'lv', { showGradeSection: true })}
+        <div class="form-control mt-3">
+          <label class="label py-1" for="lv-adviser"><span class="label-text text-xs">Name of Adviser</span></label>
+          <input id="lv-adviser" data-field="adviser_name" type="text" class="input input-bordered input-sm" maxlength="255" placeholder="The learner-victim's class adviser" bind:value={adviserName} />
+        </div>
 
         {#each /** @type {const} */ (['MOTHER', 'FATHER', 'GUARDIAN']) as role}
           <div class="flex items-center justify-between gap-3 mt-5 mb-2 pb-2 border-b border-base-200">
@@ -783,63 +858,73 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="form-control">
                 <label class="label py-1" for="inc-date-{i}"><span class="label-text text-xs">Date of Incident</span></label>
-                <input id="inc-date-{i}" type="text" class="input input-bordered input-sm" placeholder="e.g. 2026-06-14 or &quot;About 2 years ago&quot;" bind:value={inc.date_of_incident} />
+                <input id="inc-date-{i}" data-field={incKey(inc, 'date_of_incident')} type="text" class="input input-bordered input-sm" placeholder="e.g. 2026-06-14 or &quot;About 2 years ago&quot;" bind:value={inc.date_of_incident} />
               </div>
               <label class="flex items-center gap-2 text-sm sm:mt-6 cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-sm" bind:checked={inc.is_estimated_date} />
+                <input type="checkbox" data-field={incKey(inc, 'is_estimated_date')} class="checkbox checkbox-sm" bind:checked={inc.is_estimated_date} />
                 This is an estimated date
               </label>
             </div>
             <div class="form-control">
               <label class="label py-1" for="inc-desc-{i}"><span class="label-text text-xs">Description</span></label>
-              <textarea id="inc-desc-{i}" class="textarea textarea-bordered textarea-sm" rows="4" bind:value={inc.description}></textarea>
+              <textarea id="inc-desc-{i}" data-field={incKey(inc, 'description')} class="textarea textarea-bordered textarea-sm" rows="4" bind:value={inc.description}></textarea>
             </div>
           </div>
         {/each}
         <button type="button" class="btn btn-outline btn-sm" onclick={addIncident}>+ Add Another Incident</button>
       {/if}
 
-      <!-- Step 4: Actions / Recommendations / Referrals -->
+      <!-- Step 4: IV. Initial Actions Taken · V. Recommendations / Next Steps -->
       {#if currentStep === 4}
-        <h2 class="font-semibold text-lg mb-1">Actions Taken</h2>
+        <h2 class="font-semibold text-lg mb-1">Initial Actions Taken</h2>
         {#each actions as a, i}
-          <div class="flex gap-2 mb-2">
-            <textarea class="textarea textarea-bordered textarea-sm flex-1" rows="2" placeholder="Action taken…" bind:value={a.action_taken}></textarea>
+          <div class="flex flex-wrap gap-2 mb-2" data-field-wrap>
+            <span class="text-sm text-base-content/50 pt-2 w-5 shrink-0">{i + 1}.</span>
+            <textarea data-field={actKey(a)} class="textarea textarea-bordered textarea-sm flex-1" rows="2" placeholder="Initial action taken…" bind:value={a.action_taken}></textarea>
             {#if actions.length > 1}
               <button type="button" class="btn btn-ghost btn-sm text-error" onclick={() => removeAction(i)}>✕</button>
             {/if}
           </div>
         {/each}
-        <button type="button" class="btn btn-outline btn-sm mb-6" onclick={addAction}>+ Add Action</button>
+        <button type="button" class="btn btn-outline btn-sm mb-6" onclick={addAction}>+ Add Initial Action</button>
 
-        <h2 class="font-semibold text-lg mb-1">Recommendations</h2>
+        <h2 class="font-semibold text-lg mb-2">Recommendations / Next Steps</h2>
+        <div class="border border-base-200 rounded-lg p-3 mb-4">
+          <p class="text-sm font-medium mb-2">Referral</p>
+          <div class="flex flex-wrap gap-4" data-field-wrap>
+            {#each [['yes', 'Yes'], ['no', 'No']] as [val, label]}
+              <label class="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="radio" class="radio radio-sm radio-primary" name="is_referred" data-field="is_referred" value={val} bind:group={referral.answer} />
+                {label}
+              </label>
+            {/each}
+            {#if referral.answer}
+              <button type="button" class="btn btn-ghost btn-xs" onclick={() => (referral.answer = '')}>Clear answer</button>
+            {/if}
+          </div>
+          {#if referral.answer === 'yes'}
+            <div class="form-control mt-3">
+              <label class="label py-1" for="ref-to"><span class="label-text text-xs">Referral to *</span></label>
+              <input id="ref-to" data-field="referred_to" type="text" class="input input-bordered input-sm" maxlength="255" placeholder="e.g. DSWD, Barangay VAWC Desk, RHU" bind:value={referral.referred_to} />
+            </div>
+            <div class="form-control mt-2">
+              <label class="label py-1" for="ref-reason"><span class="label-text text-xs">Reason for referral *</span></label>
+              <textarea id="ref-reason" data-field="referral_reason" class="textarea textarea-bordered textarea-sm" rows="3" bind:value={referral.referral_reason}></textarea>
+            </div>
+          {/if}
+        </div>
+
+        <p class="text-sm font-medium mb-1">Other recommendations / next steps</p>
         {#each recommendations as r, i}
-          <div class="flex gap-2 mb-2">
-            <textarea class="textarea textarea-bordered textarea-sm flex-1" rows="2" placeholder="Recommendation…" bind:value={r.recommendation}></textarea>
+          <div class="flex flex-wrap gap-2 mb-2" data-field-wrap>
+            <span class="text-sm text-base-content/50 pt-2 w-5 shrink-0">{i + 1}.</span>
+            <textarea data-field={recKey(r)} class="textarea textarea-bordered textarea-sm flex-1" rows="2" placeholder="Recommendation / next step…" bind:value={r.recommendation}></textarea>
             {#if recommendations.length > 1}
               <button type="button" class="btn btn-ghost btn-sm text-error" onclick={() => removeRecommendation(i)}>✕</button>
             {/if}
           </div>
         {/each}
-        <button type="button" class="btn btn-outline btn-sm mb-6" onclick={addRecommendation}>+ Add Recommendation</button>
-
-        <h2 class="font-semibold text-lg mb-1">Referrals</h2>
-        {#each referrals as r, i}
-          <div class="border border-base-200 rounded-lg p-3 mb-2 relative">
-            {#if referrals.length > 1}
-              <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeReferral(i)}>✕</button>
-            {/if}
-            <div class="form-control">
-              <label class="label py-1" for="ref-to-{i}"><span class="label-text text-xs">Referred To</span></label>
-              <input id="ref-to-{i}" type="text" class="input input-bordered input-sm" placeholder="e.g. DSWD, Barangay VAWC Desk" bind:value={r.referred_to} />
-            </div>
-            <div class="form-control mt-2">
-              <label class="label py-1" for="ref-reason-{i}"><span class="label-text text-xs">Reason</span></label>
-              <textarea id="ref-reason-{i}" class="textarea textarea-bordered textarea-sm" rows="2" bind:value={r.reason}></textarea>
-            </div>
-          </div>
-        {/each}
-        <button type="button" class="btn btn-outline btn-sm" onclick={addReferral}>+ Add Referral</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick={addRecommendation}>+ Add Recommendation</button>
       {/if}
 
       <!-- Step 5: Review -->
@@ -857,6 +942,7 @@
           <div>
             <p class="font-medium text-base-content/70">Learner-Victim</p>
             <p>{learner.first_name} {learner.middle_name} {learner.last_name} {#if learner.grade}· Grade {learner.grade}{learner.section ? ` - ${learner.section}` : ''}{/if}</p>
+            {#if adviserName.trim()}<p class="text-base-content/60">Adviser: {adviserName}</p>{/if}
           </div>
           <div>
             <p class="font-medium text-base-content/70">Other People</p>
@@ -874,9 +960,9 @@
           <div>
             <p class="font-medium text-base-content/70">Follow-up</p>
             <p>
-              {actions.filter((a) => a.action_taken.trim()).length} action(s) ·
-              {recommendations.filter((r) => r.recommendation.trim()).length} recommendation(s) ·
-              {referrals.filter((r) => r.referred_to.trim()).length} referral(s)
+              {actions.filter((a) => a.action_taken.trim()).length} initial action(s) ·
+              {recommendations.filter((r) => r.recommendation.trim()).length} other recommendation(s) ·
+              Referral: {referral.answer === 'yes' ? `Yes — ${referral.referred_to}` : referral.answer === 'no' ? 'No' : 'not answered'}
             </p>
           </div>
         </div>

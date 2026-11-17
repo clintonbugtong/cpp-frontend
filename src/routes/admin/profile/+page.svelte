@@ -1,4 +1,5 @@
 <script>
+  import { fieldErrors } from '$lib/actions/field-errors.js';
   import { authService } from '$lib/api/auth.js';
   import { authState } from '$lib/stores/auth.svelte.js';
   import { onMount } from 'svelte';
@@ -8,6 +9,8 @@
   let profileSubmitting = $state(false);
   let profileSuccess = $state('');
   let profileError = $state('');
+  /** @type {Record<string, string[]>} */
+  let profileErrors = $state({});
 
   // ── password form ────────────────────────────────────────────────────────
   let passwordForm = $state({ current_password: '', new_password: '', new_password_confirmation: '' });
@@ -39,7 +42,7 @@
   async function handleProfileSave() {
     profileSubmitting = true;
     profileSuccess = '';
-    profileError = '';
+    profileError = ''; profileErrors = {};
     const result = await authService.updateProfile(profileForm);
     if (result.success) {
       profileSuccess = 'Profile updated successfully.';
@@ -47,7 +50,8 @@
       const userResult = await authService.getCurrentUser();
       if (userResult.success && userResult.user) authState.user = userResult.user;
     } else {
-      profileError = result.error || 'Failed to update profile.';
+      profileErrors = result.validationErrors || {};
+      profileError = Object.keys(profileErrors).length ? 'Please fix the errors shown below.' : result.error || 'Failed to update profile.';
     }
     profileSubmitting = false;
   }
@@ -66,8 +70,8 @@
       passwordSuccess = 'Password changed successfully.';
       passwordForm = { current_password: '', new_password: '', new_password_confirmation: '' };
     } else {
-      passwordError = result.error || 'Failed to change password.';
       passwordErrors = result.validationErrors || {};
+      passwordError = Object.keys(passwordErrors).length ? 'Please fix the errors shown below.' : result.error || 'Failed to change password.';
     }
     passwordSubmitting = false;
   }
@@ -222,25 +226,25 @@
         <div class="alert alert-error text-sm py-2 mb-3">{profileError}</div>
       {/if}
 
-      <form onsubmit={(e) => { e.preventDefault(); handleProfileSave(); }} class="space-y-4">
+      <form onsubmit={(e) => { e.preventDefault(); handleProfileSave(); }} class="space-y-4" use:fieldErrors={{ errors: profileErrors }}>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="form-control">
             <label class="label py-1" for="p-first"><span class="label-text text-xs">First Name</span></label>
-            <input id="p-first" class="input input-bordered input-sm" bind:value={profileForm.first_name} required />
+            <input id="p-first" data-field="first_name" class="input input-bordered input-sm" bind:value={profileForm.first_name} required />
           </div>
           <div class="form-control">
             <label class="label py-1" for="p-mid"><span class="label-text text-xs">Middle Name</span></label>
-            <input id="p-mid" class="input input-bordered input-sm" bind:value={profileForm.middle_name} />
+            <input id="p-mid" data-field="middle_name" class="input input-bordered input-sm" bind:value={profileForm.middle_name} />
           </div>
           <div class="form-control">
             <label class="label py-1" for="p-last"><span class="label-text text-xs">Last Name</span></label>
-            <input id="p-last" class="input input-bordered input-sm" bind:value={profileForm.last_name} required />
+            <input id="p-last" data-field="last_name" class="input input-bordered input-sm" bind:value={profileForm.last_name} required />
           </div>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="form-control">
             <label class="label py-1" for="p-contact"><span class="label-text text-xs">Contact Number</span></label>
-            <input id="p-contact" class="input input-bordered input-sm w-full" bind:value={profileForm.contact_number} />
+            <input id="p-contact" data-field="contact_number" class="input input-bordered input-sm w-full" bind:value={profileForm.contact_number} />
           </div>
         </div>
         <div class="flex justify-end">
@@ -270,7 +274,7 @@
         <div class="alert alert-error text-sm py-2 mb-3">{passwordError}</div>
       {/if}
 
-      <form onsubmit={(e) => { e.preventDefault(); handlePasswordChange(); }} class="space-y-4 max-w-sm">
+      <form onsubmit={(e) => { e.preventDefault(); handlePasswordChange(); }} class="space-y-4 max-w-sm" use:fieldErrors={{ errors: passwordErrors }}>
         <!-- Current password -->
         <div class="form-control">
           <label class="label py-1" for="pw-current"><span class="label-text text-xs">Current Password</span></label>

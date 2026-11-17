@@ -53,7 +53,7 @@
 
   const s = $derived(data?.summary);
   const maxNature = $derived(Math.max(1, ...((data?.by_nature ?? []).map((/** @type {any} */ n) => n.total))));
-  const STATUS = /** @type {Record<string, string>} */ ({ draft: 'Draft', pending_review: 'Pending review', reviewed: 'Reviewed', new: 'New', under_review: 'Under review', linked: 'Linked' });
+  const STATUS = /** @type {Record<string, string>} */ ({ draft: 'Draft', not_forwarded: 'Not yet forwarded', for_review: 'For review', under_review: 'Under review', returned: 'Returned', recommended_resolved: 'Recommended as resolved', resolved: 'Resolved', new: 'New', linked: 'Linked' });
   /** @param {string} d */
   const fmtDate = (d) => d ? new Date(d.length === 10 ? d + 'T00:00:00' : d).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : '';
 </script>
@@ -113,7 +113,7 @@
         <div class="rounded-xl border border-primary/20 bg-primary/5 p-3">
           <p class="text-xs text-base-content/60">Intake sheets</p>
           <p class="text-2xl font-bold tabular-nums text-primary">{s.intake_sheets}</p>
-          <p class="text-[11px] text-base-content/50">{s.reviewed} reviewed · {s.pending_review} pending · {s.drafts} draft</p>
+          <p class="text-[11px] text-base-content/50">{s.resolved} resolved · {s.recommended_resolved} recommended · {s.in_progress} in progress · {s.drafts} draft</p>
         </div>
         <div class="rounded-xl border border-accent/20 bg-accent/5 p-3">
           <p class="text-xs text-base-content/60">Learner reports</p>
@@ -121,7 +121,7 @@
           <p class="text-[11px] text-base-content/50">not yet a case · {s.dismissed_reports} dismissed excluded</p>
         </div>
         <div class="rounded-xl border p-3 {s.without_action ? 'border-error/30 bg-error/5' : 'border-base-200 bg-base-100'}">
-          <p class="text-xs text-base-content/60">Cases with no action yet</p>
+          <p class="text-xs text-base-content/60">Cases with no initial action yet</p>
           <p class="text-2xl font-bold tabular-nums {s.without_action ? 'text-error' : ''}">{s.without_action}</p>
           <p class="text-[11px] text-base-content/50">{s.with_referral} referred</p>
         </div>
@@ -182,7 +182,7 @@
           {#if data.cases.length}
             <div class="overflow-x-auto -mx-2">
               <table class="table table-sm">
-                <thead><tr><th>Case no.</th><th>Date</th><th>School</th><th>Nature</th><th>Status</th><th class="text-center" title="Actions taken">Act.</th><th class="text-center" title="Referrals">Ref.</th></tr></thead>
+                <thead><tr><th>Case no.</th><th>Date</th><th>School</th><th>Nature</th><th>Status</th><th class="text-center" title="Initial actions taken">Act.</th><th class="text-center" title="Referral: Yes / No">Referred</th></tr></thead>
                 <tbody>
                   {#each data.cases as c}
                     <tr class="hover">
@@ -192,7 +192,7 @@
                       <td>{c.nature}</td>
                       <td>{STATUS[c.status] ?? c.status}</td>
                       <td class="text-center tabular-nums {c.actions === 0 ? 'text-error font-semibold' : ''}">{c.actions}</td>
-                      <td class="text-center tabular-nums">{c.referrals}</td>
+                      <td class="text-center">{c.referred === 'yes' ? 'Yes' : c.referred === 'no' ? 'No' : '—'}</td>
                     </tr>
                   {/each}
                 </tbody>

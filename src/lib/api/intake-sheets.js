@@ -64,21 +64,20 @@ class IntakeSheetsService {
 		}
 	}
 
-	async reviewIntakeSheet(id) {
+	/**
+	 * One step on the review route. forward needs a destination key from
+	 * permissions.actions.destinations ("division", "school:school_head", …).
+	 * @param {any} id
+	 * @param {'review'|'forward'|'recommend_resolved'|'resolve'|'reopen'} action
+	 * @param {string} [remarks]
+	 * @param {string|null} [destination]
+	 */
+	async routeIntakeSheet(id, action, remarks, destination = null) {
 		try {
-			const response = await api.post(`/intake-sheets/${id}/review`);
+			const response = await api.post(`/intake-sheets/${id}/route`, { action, remarks: remarks || null, destination });
 			return { success: true, data: response };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	}
-
-	async unreviewIntakeSheet(id) {
-		try {
-			const response = await api.post(`/intake-sheets/${id}/unreview`);
-			return { success: true, data: response };
-		} catch (err) {
-			return { success: false, error: err.message };
+		} catch (/** @type {any} */ err) {
+			return { success: false, error: err.message, validationErrors: err.validationErrors };
 		}
 	}
 
@@ -92,10 +91,10 @@ class IntakeSheetsService {
 		}
 	}
 
-	// ── Sub-resource CRUD (Incident Details, Actions Taken, Recommendations,
-	// Referrals) — add/edit/soft-delete one entry at a time, independent of
-	// the others. `type` is one of: 'detailed-incidents', 'actions-taken',
-	// 'recommendations', 'referrals'. Each returns the whole updated sheet,
+	// ── Sub-resource CRUD (Incident Details, Initial Actions Taken, Other
+	// Recommendations / Next Steps) — add/edit/soft-delete one entry at a time,
+	// independent of the others. `type` is one of: 'detailed-incidents',
+	// 'actions-taken', 'recommendations'. Each returns the whole updated sheet,
 	// same shape as getIntakeSheet(). ──────────────────────────────────────
 
 	/** @param {string} type @param {Record<string, any>} data */
@@ -114,6 +113,20 @@ class IntakeSheetsService {
 			const response = await api.put(`/intake-sheets/${id}/${type}/${childId}`, data);
 			return { success: true, data: response };
 		} catch (err) {
+			return { success: false, error: err.message, validationErrors: err.validationErrors };
+		}
+	}
+
+	/**
+	 * V. "Referral: YES / NO" — one answer per intake sheet.
+	 * @param {any} id
+	 * @param {{is_referred: boolean|null, referred_to?: string|null, referral_reason?: string|null}} data
+	 */
+	async updateReferral(id, data) {
+		try {
+			const response = await api.put(`/intake-sheets/${id}/referral`, data);
+			return { success: true, data: response };
+		} catch (/** @type {any} */ err) {
 			return { success: false, error: err.message, validationErrors: err.validationErrors };
 		}
 	}

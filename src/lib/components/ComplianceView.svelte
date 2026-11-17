@@ -258,7 +258,7 @@
               {@const st = reportStatus(r.status)}
               <tr class="hover">
                 <td>
-                  <button class="font-medium text-left link link-hover" title="Account and personnel history" onclick={() => openPersonnel(r)}>{r.school_name}</button>
+                  <button class="font-medium text-left link link-hover" title="School Head and Guidance Counselor accounts, and their history" onclick={() => openPersonnel(r)}>{r.school_name}</button>
                   <p class="text-xs text-base-content/50">{r.school_id_number}{#if !r.has_account}<span class="text-warning"> · no account</span>{/if}</p>
                 </td>
                 {#if multiDivision}<td class="text-sm text-base-content/70">{r.division?.name ?? '—'}</td>{/if}
@@ -304,4 +304,4 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<SchoolAccountDialog bind:this={accountDialog} canEdit={canEditPersonnel} />
+<SchoolAccountDialog bind:this={accountDialog} onchange={load} />

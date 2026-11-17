@@ -1,8 +1,8 @@
 import { api } from './client.js';
 
 /**
- * Monthly school incident reports ("zero incident" reporting), the history of
- * personnel handling each school's shared account, compliance/summary views,
+ * Monthly school incident reports ("zero incident" reporting), the school's
+ * personal accounts and their history, compliance/summary views,
  * and the generated PDF documents.
  */
 
@@ -42,24 +42,23 @@ class SchoolReportsService {
 		try { return ok(await api.post('/school-reports/send-reminders', clean(payload))); } catch (err) { return fail(err); }
 	}
 
-	/** @param {any} schoolId */
-	async getPersonnel(schoolId) {
-		try { return ok(await api.get('/school-personnel', clean({ school_id: schoolId }))); } catch (err) { return fail(err); }
+	/** A school's personal accounts (School Head, Guidance Counselor / Designate) and their history. @param {any} schoolId */
+	async getAccounts(schoolId) {
+		try { return ok(await api.get('/school-accounts', clean({ school_id: schoolId }))); } catch (err) { return fail(err); }
 	}
 
-	/** @param {Record<string, any>} payload */
-	async addPersonnel(payload) {
-		try { return ok(await api.post('/school-personnel', payload)); } catch (err) { return fail(err); }
+	/**
+	 * Create a personal account for the person now holding a position. The
+	 * response carries the one-time credentials.
+	 * @param {{school_id: any, school_position: 'school_head'|'guidance_counselor', first_name: string, middle_name?: string, last_name: string, email: string, contact_number?: string, send_email?: boolean}} payload
+	 */
+	async createAccount(payload) {
+		try { return ok(await api.post('/school-accounts', payload)); } catch (err) { return fail(err); }
 	}
 
-	/** @param {any} id @param {Record<string, any>} payload */
-	async updatePersonnel(id, payload) {
-		try { return ok(await api.put(`/school-personnel/${id}`, payload)); } catch (err) { return fail(err); }
-	}
-
-	/** @param {{division_id?: any, school_id?: any, send_email?: boolean}} payload */
-	async provisionAccounts(payload = {}) {
-		try { return ok(await api.post('/schools/provision-accounts', clean(payload))); } catch (err) { return fail(err); }
+	/** The holder moved out — deactivate (never delete). @param {any} userId @param {{ended_at: string, end_reason: string}} payload */
+	async deactivateAccount(userId, payload) {
+		try { return ok(await api.post(`/school-accounts/${userId}/deactivate`, payload)); } catch (err) { return fail(err); }
 	}
 
 	// ── PDFs ──

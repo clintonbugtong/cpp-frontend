@@ -30,8 +30,8 @@
       pwForm = { current_password: '', new_password: '', new_password_confirmation: '' };
       await authState.refreshUser();
     } else {
-      pwError = result.error || 'Failed to change password.';
       pwValidationErrors = result.validationErrors || {};
+      pwError = Object.keys(pwValidationErrors).length ? 'Please fix the errors shown below.' : result.error || 'Failed to change password.';
     }
     pwSubmitting = false;
   }

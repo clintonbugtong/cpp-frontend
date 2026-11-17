@@ -5,7 +5,7 @@
   import { intakeSheetsService } from '$lib/api/intake-sheets.js';
   import { authState } from '$lib/stores/auth.svelte.js';
   import { api } from '$lib/api/client.js';
-  import { NATURE_OF_CASE_OPTIONS, natureOfCaseLabel, STATUS_OPTIONS, statusLabel, statusBadgeClass } from '$lib/constants/intake-sheets.js';
+  import { NATURE_OF_CASE_OPTIONS, natureOfCaseLabel, STATUS_OPTIONS, statusLabel, statusBadgeClass, levelLabel } from '$lib/constants/intake-sheets.js';
 
   /** @type {any[]} */
   let sheets = $state([]);
@@ -104,6 +104,7 @@
   <div class="flex flex-col sm:flex-row gap-3">
     <select class="select select-bordered w-full sm:w-48" bind:value={statusFilter} onchange={handleFilterChange}>
       <option value="">All Status</option>
+      {#if !authState.isIntakeSheetsReadOnly()}<option value="awaiting_me">Awaiting my office</option>{/if}
       {#each STATUS_OPTIONS as opt}
         <option value={opt.value}>{opt.label}</option>
       {/each}
@@ -195,7 +196,7 @@
                 </td>
                 <td class="text-sm">{new Date(sheet.date_of_intake).toLocaleDateString()}</td>
                 <td>
-                  <span class="badge badge-sm {statusBadgeClass(sheet.status)}">{statusLabel(sheet.status)}</span>
+                  <span class="badge badge-sm {statusBadgeClass(sheet.status)}" title={sheet.routed_to && sheet.status !== 'draft' && sheet.status !== 'resolved' ? `With the ${levelLabel(sheet.routed_to)}` : ''}>{statusLabel(sheet.status)}</span>
                 </td>
                 <td>
                   <button class="btn btn-outline btn-xs" onclick={(e) => { e.stopPropagation(); goto(`/admin/lrp/intake-sheets/${sheet.intake_sheet_id}`); }}>View</button>

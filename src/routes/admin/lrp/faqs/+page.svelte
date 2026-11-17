@@ -1,4 +1,5 @@
 <script>
+  import { fieldErrors } from '$lib/actions/field-errors.js';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { authState } from '$lib/stores/auth.svelte.js';
@@ -91,8 +92,8 @@
       editModal?.close();
       await load();
     } else {
-      saveError = result.error || 'Failed to save FAQ';
       validationErrors = result.validationErrors || {};
+      saveError = Object.keys(validationErrors).length ? 'Please fix the errors shown below.' : result.error || 'Failed to save FAQ';
     }
     saving = false;
   }
@@ -118,10 +119,6 @@
     }
   }
 
-  /** @param {string} field */
-  function fieldError(field) {
-    return validationErrors[field]?.[0] || '';
-  }
 </script>
 
 <div class="space-y-6">
@@ -183,7 +180,7 @@
 </div>
 
 <dialog bind:this={editModal} class="modal modal-bottom sm:modal-middle">
-  <div class="modal-box max-w-lg">
+  <div class="modal-box max-w-lg" use:fieldErrors={{ errors: validationErrors }}>
     <h3 class="font-bold text-lg">{editingId ? 'Edit FAQ' : 'New FAQ'}</h3>
 
     {#if saveError}
@@ -193,29 +190,27 @@
     <div class="space-y-3 mt-3">
       <div class="form-control">
         <label class="label py-1" for="faq-question"><span class="label-text text-xs">Question</span></label>
-        <input id="faq-question" type="text" class="input input-bordered w-full" maxlength="500" bind:value={form.question} />
-        {#if fieldError('question')}<p class="text-error text-xs mt-1">{fieldError('question')}</p>{/if}
+        <input id="faq-question" data-field="question" type="text" class="input input-bordered w-full" maxlength="500" bind:value={form.question} />
       </div>
 
       <div class="form-control">
         <label class="label py-1" for="faq-answer"><span class="label-text text-xs">Answer</span></label>
-        <textarea id="faq-answer" class="textarea textarea-bordered w-full" rows="5" bind:value={form.answer}></textarea>
-        {#if fieldError('answer')}<p class="text-error text-xs mt-1">{fieldError('answer')}</p>{/if}
+        <textarea id="faq-answer" data-field="answer" class="textarea textarea-bordered w-full" rows="5" bind:value={form.answer}></textarea>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div class="form-control">
           <label class="label py-1" for="faq-category"><span class="label-text text-xs">Category (optional)</span></label>
-          <input id="faq-category" type="text" class="input input-bordered w-full" maxlength="100" placeholder="e.g. Reporting" bind:value={form.category} />
+          <input id="faq-category" data-field="category" type="text" class="input input-bordered w-full" maxlength="100" placeholder="e.g. Reporting" bind:value={form.category} />
         </div>
         <div class="form-control">
           <label class="label py-1" for="faq-sort"><span class="label-text text-xs">Sort order</span></label>
-          <input id="faq-sort" type="number" min="0" class="input input-bordered w-full" bind:value={form.sort_order} />
+          <input id="faq-sort" data-field="sort_order" type="number" min="0" class="input input-bordered w-full" bind:value={form.sort_order} />
         </div>
       </div>
 
       <label class="label cursor-pointer justify-start gap-3 py-1">
-        <input type="checkbox" class="toggle toggle-sm toggle-primary" bind:checked={form.is_published} />
+        <input type="checkbox" data-field="is_published" class="toggle toggle-sm toggle-primary" bind:checked={form.is_published} />
         <span class="label-text text-sm">Published (visible on the public FAQ page)</span>
       </label>
     </div>

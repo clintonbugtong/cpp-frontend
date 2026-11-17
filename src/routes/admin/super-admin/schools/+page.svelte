@@ -1,11 +1,11 @@
 <script>
+  import { fieldErrors } from '$lib/actions/field-errors.js';
   import { schoolsService } from '$lib/api/schools.js';
   import { statusLabel, statusBadgeClass, typeLabel, classificationLabel } from '$lib/constants/schools.js';
   import { api } from '$lib/api/client.js';
   import { onMount } from 'svelte';
   import { schoolReportsService } from '$lib/api/school-reports.js';
   import SchoolAccountDialog from '$lib/components/SchoolAccountDialog.svelte';
-  import SchoolCredentialsDialog from '$lib/components/SchoolCredentialsDialog.svelte';
 
   // List state
   /** @type {any[]} */
@@ -124,8 +124,9 @@
     if (result.success) {
       createModal?.close();
       await loadSchools();
-      // The backend creates the school's account automatically on create.
-      if (result.data?.school_account) showCredentials([result.data.school_account]);
+      // Next step for a new school: create its School Head / Guidance
+      // Counselor accounts.
+      if (result.data?.school_id) accountDialog?.open(result.data.school_id, result.data.name);
     } else {
       formError = result.error || 'Failed to create school';
       formErrors = result.validationErrors || {};
@@ -202,42 +203,10 @@
     }
   }
 
-  // ── School accounts (the shared Focal Person account each school files its
-  //    monthly report with) ──
+  // ── School accounts: personal accounts for the School Head / Principal and
+  //    the Guidance Counselor / Designate, with their history ──
   /** @type {any} */
   let accountDialog = $state(null);
-  /** @type {any} */
-  let credentialsDialog = $state(null);
-  /** @type {HTMLDialogElement|null} */
-  let provisionModal = $state(null);
-  /** @type {any[]} */
-  let newAccounts = $state([]);
-  let provisioning = $state(false);
-  let provisionMessage = $state('');
-
-  /** @param {any[]} created */
-  function showCredentials(created) {
-    if (!created?.length) return;
-    newAccounts = created;
-    // Let the {#each} render before the dialog opens.
-    setTimeout(() => credentialsDialog?.open(), 0);
-  }
-
-  /** @param {{school_id?: any}} [opts] */
-  async function provisionAccounts(opts = {}) {
-    provisioning = true;
-    provisionMessage = '';
-    const result = await schoolReportsService.provisionAccounts(opts);
-    provisioning = false;
-    provisionModal?.close();
-    if (result.success) {
-      provisionMessage = result.data.message;
-      showCredentials(result.data.created);
-      await loadSchools();
-    } else {
-      listError = result.error || 'Could not create school accounts';
-    }
-  }
 
   /** @param {string} field */
   function fe(field) {
@@ -254,10 +223,6 @@
       <p class="text-base-content/50 mt-1">{total} school{total !== 1 ? 's' : ''} across all divisions</p>
     </div>
     <div class="flex flex-wrap gap-2">
-    <button onclick={() => provisionModal?.showModal()} class="btn btn-outline" title="Create the shared account for every school that doesn't have one">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 019.374 21c-2.331 0-4.512-.645-6.374-1.766z"/></svg>
-      Create school accounts
-    </button>
     <button onclick={openCreate} class="btn btn-primary">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
@@ -266,12 +231,6 @@
     </button>
     </div>
   </div>
-
-  {#if provisionMessage}
-    <div class="rounded-lg border border-success/30 bg-success/10 p-3 text-sm flex items-start justify-between gap-2">
-      <span>{provisionMessage}</span><button class="btn btn-ghost btn-xs" onclick={() => (provisionMessage = '')} aria-label="Dismiss">✕</button>
-    </div>
-  {/if}
 
   <!-- Filters -->
   <div class="flex flex-col sm:flex-row gap-3">
@@ -330,7 +289,7 @@
             {/if}
           </div>
           <div class="flex gap-2 mt-3">
-            <button class="btn btn-outline btn-xs flex-1 {school.has_account ? '' : 'btn-warning'}" onclick={() => accountDialog?.open(school.school_id, school.name)}>{school.has_account ? 'Account' : 'No account'}</button>
+            <button class="btn btn-outline btn-xs flex-1 {school.has_account ? '' : 'btn-warning'}" onclick={() => accountDialog?.open(school.school_id, school.name)}>Accounts {(school.account_positions ?? []).length}/2</button>
             <button class="btn btn-outline btn-xs flex-1" onclick={() => openEdit(school)}>Edit</button>
             <button class="btn btn-outline btn-error btn-xs flex-1" onclick={() => openDelete(school)}>Delete</button>
           </div>
@@ -349,7 +308,7 @@
             <th>Division</th>
             <th>Type</th>
             <th>Status</th>
-            <th>Account</th>
+            <th>Accounts</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -378,9 +337,10 @@
                   <span class="badge badge-sm {statusBadgeClass(school.status)}">{statusLabel(school.status)}</span>
                 </td>
                 <td>
-                  <button class="btn btn-ghost btn-xs gap-1 {school.has_account ? '' : 'text-warning'}" onclick={() => accountDialog?.open(school.school_id, school.name)} title="Account and personnel history">
+                  <button class="btn btn-ghost btn-xs gap-1 {school.has_account ? '' : 'text-warning'}" onclick={() => accountDialog?.open(school.school_id, school.name)} title="School Head and Guidance Counselor accounts, and their history">
                     <span class="h-2 w-2 rounded-full {school.has_account ? 'bg-success' : 'bg-warning'}"></span>
-                    {school.has_account ? 'Active' : 'None'}
+                    {(school.account_positions ?? []).length}/2
+                    <span class="text-base-content/50 font-normal">{(school.account_positions ?? []).map((/** @type {string} */ k) => k === 'school_head' ? 'Head' : 'GC').join(' · ') || 'none'}</span>
                   </button>
                 </td>
                 <td>
@@ -413,7 +373,7 @@
 
 <!-- ── Create School Modal ── -->
 <dialog bind:this={createModal} class="modal modal-bottom sm:modal-middle">
-  <div class="modal-box w-full max-w-lg">
+  <div class="modal-box w-full max-w-lg" use:fieldErrors={{ errors: formErrors, rest: false }}>
     <h3 class="font-bold text-lg mb-4">Add New School</h3>
     {#if formError}<div class="alert alert-error mb-4 text-sm"><span>{formError}</span></div>{/if}
 
@@ -497,7 +457,7 @@
 
 <!-- ── Edit School Modal ── -->
 <dialog bind:this={editModal} class="modal modal-bottom sm:modal-middle">
-  <div class="modal-box w-full max-w-lg">
+  <div class="modal-box w-full max-w-lg" use:fieldErrors={{ errors: formErrors, rest: false }}>
     <h3 class="font-bold text-lg mb-4">Edit School</h3>
     {#if formError}<div class="alert alert-error mb-4 text-sm"><span>{formError}</span></div>{/if}
 
@@ -592,24 +552,4 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- ── Create school accounts ── -->
-<dialog bind:this={provisionModal} class="modal modal-bottom sm:modal-middle">
-  <div class="modal-box max-w-md">
-    <h3 class="font-bold text-lg">Create school accounts</h3>
-    <p class="py-3 text-sm text-base-content/70">
-      Every active school that doesn't have an account yet gets one shared <strong>Learner Right Protection Focal Person</strong> account,
-      used to file its monthly incident report. Each school is emailed its username and a temporary password, and must change it on first sign-in.
-      Schools that already have an account are skipped.
-    </p>
-    <div class="modal-action">
-      <button class="btn btn-ghost btn-sm" onclick={() => provisionModal?.close()}>Cancel</button>
-      <button class="btn btn-primary btn-sm" disabled={provisioning} onclick={() => provisionAccounts()}>
-        {#if provisioning}<span class="loading loading-spinner loading-xs"></span>{/if}Create accounts
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-
-<SchoolAccountDialog bind:this={accountDialog} canEdit onprovision={(sch) => provisionAccounts({ school_id: sch.school_id })} />
-<SchoolCredentialsDialog bind:this={credentialsDialog} accounts={newAccounts} />
+<SchoolAccountDialog bind:this={accountDialog} onchange={loadSchools} />

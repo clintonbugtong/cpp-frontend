@@ -14,12 +14,28 @@ export function natureOfCaseLabel(value) {
 	return NATURE_OF_CASE_OPTIONS.find((o) => o.value === value)?.label || '—';
 }
 
-// draft → pending_review → reviewed (see IntakeSheet::getStatusAttribute on the backend).
+// Review route: School → Division Office → Regional Office
+// (see IntakeSheet::getStatusAttribute on the backend).
 export const STATUS_OPTIONS = [
 	{ value: 'draft', label: 'Draft' },
-	{ value: 'pending_review', label: 'Pending Review' },
-	{ value: 'reviewed', label: 'Reviewed' }
+	{ value: 'not_forwarded', label: 'Not yet forwarded' },
+	{ value: 'for_review', label: 'For review' },
+	{ value: 'under_review', label: 'Under review' },
+	{ value: 'recommended_resolved', label: 'Recommended as resolved' },
+	{ value: 'resolved', label: 'Resolved' }
 ];
+
+/** Offices on the review route. */
+export const LEVEL_LABELS = /** @type {Record<string, string>} */ ({
+	school: 'School',
+	division: 'Division Office',
+	regional: 'Regional Office'
+});
+
+/** @param {string|null|undefined} level */
+export function levelLabel(level) {
+	return (level && LEVEL_LABELS[level]) || '—';
+}
 
 /** @param {string|null|undefined} value */
 export function statusLabel(value) {
@@ -30,8 +46,12 @@ export function statusLabel(value) {
 export function statusBadgeClass(value) {
 	switch (value) {
 		case 'draft': return 'badge-ghost';
-		case 'pending_review': return 'badge-warning';
-		case 'reviewed': return 'badge-success';
+		case 'not_forwarded': return 'badge-ghost badge-outline';
+		case 'for_review': return 'badge-warning';
+		case 'under_review': return 'badge-info';
+		case 'returned': return 'badge-error badge-outline';
+		case 'recommended_resolved': return 'badge-accent';
+		case 'resolved': return 'badge-success';
 		default: return 'badge-ghost';
 	}
 }

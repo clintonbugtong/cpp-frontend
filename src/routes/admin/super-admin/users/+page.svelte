@@ -1,4 +1,5 @@
 <script>
+  import { fieldErrors } from '$lib/actions/field-errors.js';
   import { usersService } from '$lib/api/users.js';
   import { api } from '$lib/api/client.js';
   import { onMount } from 'svelte';
@@ -564,7 +565,7 @@
 
 <!-- ── Create User Modal ── -->
 <dialog bind:this={createModal} class="modal modal-bottom sm:modal-middle">
-  <div class="modal-box w-full max-w-2xl">
+  <div class="modal-box w-full max-w-2xl" use:fieldErrors={{ errors: formErrors, rest: false }}>
     <h3 class="font-bold text-lg mb-4">Add New User</h3>
 
     {#if formError}
@@ -709,7 +710,7 @@
 
 <!-- ── Edit User Modal ── -->
 <dialog bind:this={editModal} class="modal modal-bottom sm:modal-middle">
-  <div class="modal-box w-full max-w-2xl">
+  <div class="modal-box w-full max-w-2xl" use:fieldErrors={{ errors: formErrors, rest: false }}>
     <h3 class="font-bold text-lg mb-4">Edit User</h3>
 
     {#if formError}

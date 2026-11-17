@@ -202,9 +202,9 @@
         <p class="text-xs text-base-content/40 mt-1.5">{data.summary?.recently_added ?? 0} new in last 30 days · tap to view</p>
       </button>
 
-      <button type="button" class="{SHEET_CARD} hover:shadow-sm transition-shadow text-left w-full cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets?status=pending_review')}>
+      <button type="button" class="{SHEET_CARD} hover:shadow-sm transition-shadow text-left w-full cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets?status=awaiting_me')}>
         <div class="flex items-center justify-between mb-3">
-          <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Pending Review</span>
+          <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Awaiting My Office</span>
           <span class="w-8 h-8 rounded-xl bg-warning/10 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-warning">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -212,20 +212,20 @@
           </span>
         </div>
         <p class="text-3xl font-bold tracking-tight">{data.summary?.pending_review ?? '—'}</p>
-        <p class="text-xs text-base-content/40 mt-1.5">Tap to view</p>
+        <p class="text-xs text-base-content/40 mt-1.5">Forwarded or returned to your office for review · tap to view</p>
       </button>
 
-      <button type="button" class="{SHEET_CARD} hover:shadow-sm transition-shadow text-left w-full cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets?status=reviewed')}>
+      <button type="button" class="{SHEET_CARD} hover:shadow-sm transition-shadow text-left w-full cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets?status=resolved')}>
         <div class="flex items-center justify-between mb-3">
-          <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Reviewed</span>
+          <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Resolved</span>
           <span class="w-8 h-8 rounded-xl bg-success/10 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-success">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
           </span>
         </div>
-        <p class="text-3xl font-bold tracking-tight">{data.summary?.reviewed ?? '—'}</p>
-        <p class="text-xs text-base-content/40 mt-1.5">{pct(data.summary?.reviewed ?? 0, data.summary?.total ?? 0)}% of total · tap to view</p>
+        <p class="text-3xl font-bold tracking-tight">{data.summary?.resolved ?? '—'}</p>
+        <p class="text-xs text-base-content/40 mt-1.5">{pct(data.summary?.resolved ?? 0, data.summary?.total ?? 0)}% of total · tap to view</p>
       </button>
 
       <div class="{SHEET_CARD} hover:shadow-sm transition-shadow">
