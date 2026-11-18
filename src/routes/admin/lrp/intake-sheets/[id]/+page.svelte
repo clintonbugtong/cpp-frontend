@@ -153,6 +153,19 @@
     'ALLEGED-OFFENDER': 'Alleged Offender'
   };
 
+  // People Involved, split by side of the case. The learner-victim's parents /
+  // guardian belong with the complainant side — never next to the respondents.
+  const COMPLAINANT_SIDE = ['LEARNER-VICTIM', 'MOTHER', 'FATHER', 'GUARDIAN', 'COMPLAINANT'];
+  const complainantSide = $derived(
+    (sheet?.persons ?? []).filter((/** @type {any} */ p) => COMPLAINANT_SIDE.includes(p.role))
+      .sort((/** @type {any} */ a, /** @type {any} */ b) => COMPLAINANT_SIDE.indexOf(a.role) - COMPLAINANT_SIDE.indexOf(b.role))
+  );
+  const respondents = $derived((sheet?.persons ?? []).filter((/** @type {any} */ p) => p.role === 'ALLEGED-OFFENDER'));
+  /** "Mother of the learner-victim" etc. @param {any} p */
+  const sideRoleLabel = (p) => ['MOTHER', 'FATHER', 'GUARDIAN'].includes(p.role)
+    ? `${ROLE_LABELS[/** @type {keyof typeof ROLE_LABELS} */ (p.role)]} of the learner-victim`
+    : ROLE_LABELS[/** @type {keyof typeof ROLE_LABELS} */ (p.role)] || p.role;
+
   // ═══════════════════════════════════════════════════════════════════════
   // Sub-resource editing — Incident Details, Initial Actions Taken, Other
   // Recommendations / Next Steps. Each entry is added, edited, or deleted individually (never
@@ -465,81 +478,78 @@
         <p class="text-xs text-base-content/60 mt-3">You can add and update Incident Details, Initial Actions Taken and Recommendations / Next Steps (including the Referral). The case details and people involved can only be changed by the school.</p>
       {/if}
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm mt-4">
-        <p><span class="text-base-content/50">Prepared by:</span> {sheet.prepared_by?.full_name || '—'}{#if sheet.prepared_by?.position} <span class="text-base-content/40">· {sheet.prepared_by.position}</span>{/if}</p>
-        <p><span class="text-base-content/50">Last updated by:</span> {sheet.updated_by?.full_name || '—'}{#if sheet.updated_by} <span class="text-base-content/40">· {fmtDateTime(sheet.updated_at)}</span>{/if}</p>
+      <!-- Who: preparer, last editor, and only the offices that have reviewed so far -->
+      <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-base-content/60 mt-3 pt-3 border-t border-base-200">
+        <span>Prepared by <span class="text-base-content">{sheet.prepared_by?.full_name || '—'}</span></span>
+        {#if sheet.updated_by}<span>Last updated by <span class="text-base-content">{sheet.updated_by.full_name}</span> · {fmtDateTime(sheet.updated_at)}</span>{/if}
         {#each ['school', 'division', 'regional'] as lvl}
           {@const r = sheet.reviewers?.[lvl]}
-          <p><span class="text-base-content/50">Reviewed by ({levelLabel(lvl)}):</span> {#if r}{r.full_name} <span class="text-base-content/40">· {fmtDateTime(r.reviewed_at)}</span>{:else}—{/if}</p>
+          {#if r}<span>Reviewed ({levelLabel(lvl)}) <span class="text-base-content">{r.full_name}</span> · {fmtDateTime(r.reviewed_at)}</span>{/if}
         {/each}
       </div>
-
-      {#if sheet.routing_events?.length}
-        <div class="mt-4">
-          <p class="text-xs font-semibold text-base-content/60 mb-1">History</p>
-          <ol class="border-l border-base-300 ml-1.5 space-y-2">
-            {#each [...sheet.routing_events].reverse() as e}
-              <li class="pl-3 relative text-sm">
-                <span class="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full {e.action === 'resolved' ? 'bg-success' : e.action === 'returned' ? 'bg-warning' : 'bg-primary/60'}"></span>
-                <p><span class="font-medium">{EVENT_LABELS[e.action] ?? e.action}</span>
-                  {#if e.action === 'forwarded' || e.action === 'recommended_resolved' || e.action === 'returned'}<span class="text-base-content/60"> — {levelLabel(e.from_level)} → {placeLabel(e.to_level, e.to_position_label)}</span>{/if}
-                  {#if e.action === 'reviewed'}<span class="text-base-content/60"> — {levelLabel(e.to_level)}</span>{/if}
-                </p>
-                <p class="text-xs text-base-content/50">{e.user?.full_name ?? '—'}{e.user?.position ? `, ${e.user.position}` : ''} · {fmtDateTime(e.created_at)}</p>
-                {#if e.remarks}<p class="text-xs text-base-content/70 whitespace-pre-wrap mt-0.5">“{e.remarks}”</p>{/if}
-              </li>
-            {/each}
-          </ol>
-        </div>
-      {/if}
     </div>
 
-    <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
-      <h2 class="font-semibold text-lg mb-3">People Involved</h2>
-      <p class="text-sm mb-3"><span class="text-base-content/50">Adviser of the learner-victim:</span> {sheet.adviser_name || '—'}</p>
-
-      <!-- Mobile: card list -->
-      <div class="sm:hidden space-y-3">
-        {#each sheet.persons || [] as p}
-          <div class="border border-base-200 rounded-lg p-3">
-            <div class="flex items-center justify-between gap-2">
-              <span class="font-medium text-sm">{fullName(p)}</span>
-              <span class="badge badge-sm badge-ghost shrink-0">{ROLE_LABELS[/** @type {keyof typeof ROLE_LABELS} */ (p.role)] || p.role}</span>
+    {#snippet personList(/** @type {any[]} */ list, /** @type {string} */ empty)}
+      {#if !list.length}
+        <p class="text-sm text-base-content/40">{empty}</p>
+      {:else}
+        <!-- Mobile: card list -->
+        <div class="sm:hidden space-y-2">
+          {#each list as p}
+            <div class="border border-base-200 rounded-lg p-3">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-medium text-sm">{fullName(p)}</span>
+                <span class="badge badge-sm badge-ghost shrink-0">{sideRoleLabel(p)}</span>
+              </div>
+              <p class="text-xs text-base-content/60 mt-1">
+                {#if p.role === 'LEARNER-VICTIM'}
+                  {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
+                {:else}
+                  {p.relation_to_learner_victim || p.occupation || ''}
+                {/if}
+                {#if p.contact_number} · {p.contact_number}{/if}
+              </p>
             </div>
-            <p class="text-xs text-base-content/60 mt-1">
-              {#if p.role === 'LEARNER-VICTIM'}
-                {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
-              {:else}
-                {p.relation_to_learner_victim || p.occupation || ''}
-              {/if}
-              {#if p.contact_number} · {p.contact_number}{/if}
-            </p>
-          </div>
-        {/each}
-      </div>
+          {/each}
+        </div>
+        <!-- Tablet/desktop: table -->
+        <div class="hidden sm:block overflow-x-auto">
+          <table class="table table-sm table-fixed">
+            <thead><tr><th class="w-52">Role</th><th>Name</th><th>Details</th><th class="w-40">Contact</th></tr></thead>
+            <tbody>
+              {#each list as p}
+                <tr>
+                  <td><span class="badge badge-sm badge-ghost whitespace-nowrap">{sideRoleLabel(p)}</span></td>
+                  <td>{fullName(p)}</td>
+                  <td class="text-base-content/70">
+                    {#if p.role === 'LEARNER-VICTIM'}
+                      {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
+                    {:else}
+                      {p.relation_to_learner_victim || p.occupation || ''}
+                    {/if}
+                  </td>
+                  <td class="text-base-content/70">{p.contact_number || '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    {/snippet}
 
-      <!-- Tablet/desktop: table -->
-      <div class="hidden sm:block overflow-x-auto">
-        <table class="table table-sm">
-          <thead><tr><th>Role</th><th>Name</th><th>Details</th><th>Contact</th></tr></thead>
-          <tbody>
-            {#each sheet.persons || [] as p}
-              <tr>
-                <td><span class="badge badge-sm badge-ghost">{ROLE_LABELS[/** @type {keyof typeof ROLE_LABELS} */ (p.role)] || p.role}</span></td>
-                <td>{fullName(p)}</td>
-                <td class="text-base-content/70">
-                  {#if p.role === 'LEARNER-VICTIM'}
-                    {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
-                  {:else}
-                    {p.relation_to_learner_victim || p.occupation || ''}
-                  {/if}
-                </td>
-                <td class="text-base-content/70">{p.contact_number || '—'}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+    <!-- Learner-Victim / Complainant side -->
+    <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
+      <h2 class="font-semibold text-lg">Learner-Victim / Complainant</h2>
+      <p class="text-xs text-base-content/50 mb-3">The learner-victim, their parents or guardian, and anyone who filed the complaint.</p>
+      {@render personList(complainantSide, 'None recorded.')}
+      <p class="text-sm mt-2"><span class="text-base-content/50">Adviser of the learner-victim:</span> {sheet.adviser_name || '—'}</p>
+    </div>
+
+    <!-- Respondent side -->
+    <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
+      <h2 class="font-semibold text-lg">Respondent / Alleged Offender{respondents.length > 1 ? 's' : ''}</h2>
+      <p class="text-xs text-base-content/50 mb-3">The person or persons the complaint is against.</p>
+      {@render personList(respondents, 'No alleged offender recorded.')}
     </div>
 
     <!-- Incident Details -->
@@ -719,6 +729,34 @@
         {/if}
       {/if}
     </div>
+
+    <!-- Route history — kept apart from the route card so the card stays short -->
+    {#if sheet.routing_events?.length}
+      <details class="card bg-base-100 shadow-sm border border-base-200 group">
+        <summary class="p-5 cursor-pointer list-none flex items-center justify-between gap-3">
+          <span>
+            <span class="font-semibold text-lg">Route history</span>
+            <span class="text-sm text-base-content/50 ml-1">({sheet.routing_events.length})</span>
+          </span>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 transition-transform group-open:rotate-180"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+        </summary>
+        <div class="px-5 pb-5">
+          <ol class="border-l border-base-300 ml-1.5 space-y-2">
+            {#each [...sheet.routing_events].reverse() as e}
+              <li class="pl-3 relative text-sm">
+                <span class="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full {e.action === 'resolved' ? 'bg-success' : e.action === 'returned' ? 'bg-warning' : 'bg-primary/60'}"></span>
+                <p><span class="font-medium">{EVENT_LABELS[e.action] ?? e.action}</span>
+                  {#if e.action === 'forwarded' || e.action === 'recommended_resolved' || e.action === 'returned'}<span class="text-base-content/60"> — {levelLabel(e.from_level)} → {placeLabel(e.to_level, e.to_position_label)}</span>{/if}
+                  {#if e.action === 'reviewed'}<span class="text-base-content/60"> — {levelLabel(e.to_level)}</span>{/if}
+                </p>
+                <p class="text-xs text-base-content/50">{e.user?.full_name ?? '—'}{e.user?.position ? `, ${e.user.position}` : ''} · {fmtDateTime(e.created_at)}</p>
+                {#if e.remarks}<p class="text-xs text-base-content/70 whitespace-pre-wrap mt-0.5">“{e.remarks}”</p>{/if}
+              </li>
+            {/each}
+          </ol>
+        </div>
+      </details>
+    {/if}
   {/if}
 </div>
 

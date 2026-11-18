@@ -27,10 +27,11 @@
 
   const STEPS = [
     { n: 1, label: 'Intake Info' },
-    { n: 2, label: 'People Involved' },
-    { n: 3, label: 'Incident Details' },
-    { n: 4, label: 'Actions & Recommendations' },
-    { n: 5, label: 'Review & Submit' }
+    { n: 2, label: 'Learner-Victim / Complainant' },
+    { n: 3, label: 'Respondent' },
+    { n: 4, label: 'Incident Details' },
+    { n: 5, label: 'Actions & Recommendations' },
+    { n: 6, label: 'Review & Submit' }
   ];
   let currentStep = $state(1);
 
@@ -329,7 +330,7 @@
       if (!learner.first_name?.trim()) return e('persons.0.first_name', "Enter the learner-victim's first name.");
       if (!learner.last_name?.trim()) return e('persons.0.last_name', "Enter the learner-victim's last name.");
     }
-    if (step === 4 && referral.answer === 'yes') {
+    if (step === 5 && referral.answer === 'yes') {
       if (!referral.referred_to.trim()) return e('referred_to', 'Referral is YES — say who the case was referred to.');
       if (!referral.referral_reason.trim()) return e('referral_reason', 'Referral is YES — give the reason for the referral.');
     }
@@ -358,15 +359,16 @@
       if (result.success && !sheetId) sheetId = result.data.intake_sheet_id;
       return result;
     }
-    if (currentStep === 2) {
+    // Persons are saved as one list, so both people steps send all of them.
+    if (currentStep === 2 || currentStep === 3) {
       return intakeSheetsService.updateIntakeSheet(sheetId, { persons: buildPersons(), adviser_name: adviserName.trim() || null });
     }
-    if (currentStep === 3) {
+    if (currentStep === 4) {
       return intakeSheetsService.updateIntakeSheet(sheetId, {
         detailed_incidents: incidents.filter((i) => i.date_of_incident || i.description)
       });
     }
-    if (currentStep === 4) {
+    if (currentStep === 5) {
       return intakeSheetsService.updateIntakeSheet(sheetId, {
         actions_taken: actions.filter((a) => a.action_taken.trim()),
         recommendations: recommendations.filter((r) => r.recommendation.trim()),
@@ -540,12 +542,12 @@
   const REPEATABLE_ROLES = ['COMPLAINANT', 'ALLEGED-OFFENDER'];
   const STEP_FOR_PREFIX = [
     { prefix: 'persons', step: 2 },
-    { prefix: 'detailed_incidents', step: 3 },
-    { prefix: 'actions_taken', step: 4 },
-    { prefix: 'recommendations', step: 4 },
-    { prefix: 'is_referred', step: 4 },
-    { prefix: 'referred_to', step: 4 },
-    { prefix: 'referral_reason', step: 4 },
+    { prefix: 'detailed_incidents', step: 4 },
+    { prefix: 'actions_taken', step: 5 },
+    { prefix: 'recommendations', step: 5 },
+    { prefix: 'is_referred', step: 5 },
+    { prefix: 'referred_to', step: 5 },
+    { prefix: 'referral_reason', step: 5 },
     { prefix: 'adviser_name', step: 2 }
   ];
 
@@ -578,6 +580,9 @@
 
   /** @param {string} key */
   function stepForField(key) {
+    // An alleged offender's field lives on the Respondent step.
+    const m = key.match(/^persons\.(\d+)\./);
+    if (m && buildPersons()[Number(m[1])]?.role === 'ALLEGED-OFFENDER') return 3;
     const hit = STEP_FOR_PREFIX.find((s) => key === s.prefix || key.startsWith(`${s.prefix}.`));
     return hit ? hit.step : 1;
   }
@@ -673,7 +678,7 @@
   {/if}
 
   <!-- Compact step indicator (mobile): the full labeled steps bar below doesn't
-       fit 5 labels on a narrow screen without wrapping, so under md we show a
+       fit 6 labels on a narrow screen without wrapping, so under md we show a
        "Step X of 5" line with a slim progress bar instead. -->
   <div class="md:hidden">
     <div class="flex items-center justify-between text-xs text-base-content/60 mb-1.5">
@@ -803,52 +808,61 @@
         </div>
       {/if}
 
-      <!-- Step 2: People Involved -->
+      <!-- Step 2: Learner-Victim / Complainant — the learner-victim, their parents / guardian, complainants -->
       {#if currentStep === 2}
-        <h2 class="font-semibold text-lg mb-1">People Involved</h2>
+        <h2 class="font-semibold text-lg mb-1">Learner-Victim / Complainant</h2>
         {#if fe('persons')}<p class="text-xs text-error mb-3">{fe('persons')}</p>{/if}
+        <p class="text-xs text-base-content/50 mb-4">The learner-victim, their parents or guardian, and anyone who filed the complaint. The respondent comes in the next step.</p>
+        <section>
 
-        <div class="divider text-sm">Learner-Victim *</div>
-        {@render personFields(learner, 'lv', { showGradeSection: true })}
-        <div class="form-control mt-3">
-          <label class="label py-1" for="lv-adviser"><span class="label-text text-xs">Name of Adviser</span></label>
-          <input id="lv-adviser" data-field="adviser_name" type="text" class="input input-bordered input-sm" maxlength="255" placeholder="The learner-victim's class adviser" bind:value={adviserName} />
-        </div>
-
-        {#each /** @type {const} */ (['MOTHER', 'FATHER', 'GUARDIAN']) as role}
-          <div class="flex items-center justify-between gap-3 mt-5 mb-2 pb-2 border-b border-base-200">
-            <span class="text-sm font-medium">{role.charAt(0) + role.slice(1).toLowerCase()}</span>
-            <label class="flex items-center gap-2 text-xs text-base-content/60 cursor-pointer shrink-0">
-              <input type="checkbox" class="checkbox checkbox-sm" bind:checked={optional[role].included} />
-              Include
-            </label>
+          <p class="text-sm font-medium mb-1">Learner-Victim *</p>
+          {@render personFields(learner, 'lv', { showGradeSection: true })}
+          <div class="form-control mt-3">
+            <label class="label py-1" for="lv-adviser"><span class="label-text text-xs">Name of Adviser</span></label>
+            <input id="lv-adviser" data-field="adviser_name" type="text" class="input input-bordered input-sm" maxlength="255" placeholder="The learner-victim's class adviser" bind:value={adviserName} />
           </div>
-          {#if optional[role].included}
-            {@render personFields(optional[role], role.toLowerCase(), { hideSex: role === 'MOTHER' || role === 'FATHER' })}
-          {/if}
-        {/each}
 
-        <div class="divider text-sm">Complainant(s)</div>
-        {#each complainants as c, i}
-          <div class="border border-base-200 rounded-lg p-3 mb-3 relative">
-            <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeComplainant(i)}>Remove</button>
-            {@render personFields(c, `comp-${i}`, { showOccupation: true, showRelation: true })}
-          </div>
-        {/each}
-        <button type="button" class="btn btn-outline btn-sm" onclick={addComplainant}>+ Add Complainant</button>
+          {#each /** @type {const} */ (['MOTHER', 'FATHER', 'GUARDIAN']) as role}
+            <div class="flex items-center justify-between gap-3 mt-5 mb-2 pb-2 border-b border-base-200">
+              <span class="text-sm font-medium">{role.charAt(0) + role.slice(1).toLowerCase()} <span class="font-normal text-base-content/50">of the learner-victim</span></span>
+              <label class="flex items-center gap-2 text-xs text-base-content/60 cursor-pointer shrink-0">
+                <input type="checkbox" class="checkbox checkbox-sm" bind:checked={optional[role].included} />
+                Include
+              </label>
+            </div>
+            {#if optional[role].included}
+              {@render personFields(optional[role], role.toLowerCase(), { hideSex: role === 'MOTHER' || role === 'FATHER' })}
+            {/if}
+          {/each}
 
-        <div class="divider text-sm">Alleged Offender(s)</div>
-        {#each allegedOffenders as o, i}
-          <div class="border border-base-200 rounded-lg p-3 mb-3 relative">
-            <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeOffender(i)}>Remove</button>
-            {@render personFields(o, `off-${i}`, { showOccupation: true, showRelation: true })}
-          </div>
-        {/each}
-        <button type="button" class="btn btn-outline btn-sm" onclick={addOffender}>+ Add Alleged Offender</button>
+          <p class="text-sm font-medium mt-5 mb-2 pb-2 border-b border-base-200">Complainant(s)</p>
+          {#each complainants as c, i}
+            <div class="border border-base-200 rounded-lg p-3 mb-3 relative">
+              <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeComplainant(i)}>Remove</button>
+              {@render personFields(c, `comp-${i}`, { showOccupation: true, showRelation: true })}
+            </div>
+          {/each}
+          <button type="button" class="btn btn-outline btn-sm" onclick={addComplainant}>+ Add Complainant</button>
+        </section>
       {/if}
 
-      <!-- Step 3: Incident Details -->
+      <!-- Step 3: Respondent — who the complaint is against -->
       {#if currentStep === 3}
+        <h2 class="font-semibold text-lg mb-1">Respondent / Alleged Offender(s)</h2>
+        <p class="text-xs text-base-content/50 mb-4">The person or persons the complaint is against. Leave it empty if not yet known.</p>
+        <section>
+          {#each allegedOffenders as o, i}
+            <div class="border border-base-200 rounded-lg p-3 mb-3 relative">
+              <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeOffender(i)}>Remove</button>
+              {@render personFields(o, `off-${i}`, { showOccupation: true, showRelation: true })}
+            </div>
+          {/each}
+          <button type="button" class="btn btn-outline btn-sm" onclick={addOffender}>+ Add Alleged Offender</button>
+        </section>
+      {/if}
+
+      <!-- Step 4: Incident Details -->
+      {#if currentStep === 4}
         <h2 class="font-semibold text-lg mb-4">Incident Details</h2>
         {#each incidents as inc, i}
           <div class="border border-base-200 rounded-lg p-3 mb-3 relative space-y-3">
@@ -874,8 +888,8 @@
         <button type="button" class="btn btn-outline btn-sm" onclick={addIncident}>+ Add Another Incident</button>
       {/if}
 
-      <!-- Step 4: IV. Initial Actions Taken · V. Recommendations / Next Steps -->
-      {#if currentStep === 4}
+      <!-- Step 5: IV. Initial Actions Taken · V. Recommendations / Next Steps -->
+      {#if currentStep === 5}
         <h2 class="font-semibold text-lg mb-1">Initial Actions Taken</h2>
         {#each actions as a, i}
           <div class="flex flex-wrap gap-2 mb-2" data-field-wrap>
@@ -927,8 +941,8 @@
         <button type="button" class="btn btn-outline btn-sm" onclick={addRecommendation}>+ Add Recommendation</button>
       {/if}
 
-      <!-- Step 5: Review -->
-      {#if currentStep === 5}
+      <!-- Step 6: Review -->
+      {#if currentStep === 6}
         <h2 class="font-semibold text-lg mb-4">Review &amp; Submit</h2>
         <div class="space-y-4 text-sm">
           <div>
@@ -945,12 +959,18 @@
             {#if adviserName.trim()}<p class="text-base-content/60">Adviser: {adviserName}</p>{/if}
           </div>
           <div>
-            <p class="font-medium text-base-content/70">Other People</p>
+            <p class="font-medium text-base-content/70">Parents / Guardian &amp; Complainants</p>
             <p>
               {#each ['MOTHER', 'FATHER', 'GUARDIAN'] as role}
-                {#if optional[role].included}{role.charAt(0) + role.slice(1).toLowerCase()}: {optional[role].first_name} {optional[role].last_name}<br/>{/if}
+                {#if optional[role].included}{role.charAt(0) + role.slice(1).toLowerCase()} of the learner-victim: {optional[role].first_name} {optional[role].last_name}<br/>{/if}
               {/each}
-              {complainants.length} complainant(s) · {allegedOffenders.length} alleged offender(s)
+              {complainants.filter((c) => c.first_name || c.last_name).length} complainant(s)
+            </p>
+          </div>
+          <div>
+            <p class="font-medium text-base-content/70">Respondent / Alleged Offender(s)</p>
+            <p>
+              {#each allegedOffenders.filter((o) => o.first_name || o.last_name) as o}{o.first_name} {o.last_name}<br/>{:else}None recorded{/each}
             </p>
           </div>
           <div>

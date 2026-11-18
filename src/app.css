@@ -52,3 +52,30 @@ body {
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* ── Form fields: label above, field full width ──────────────────────────
+   DaisyUI 5 dropped the v4 .form-control wrapper that these forms use, so a
+   label and its input were laid out inline, side by side, and each input
+   started wherever its label happened to end. This restores the stacked
+   layout: the label sits on its own line (long labels wrap instead of pushing
+   the field) and the field fills its column, so fields in the same row line up.
+   :where() keeps specificity at zero, so a width utility on a field (w-40 …)
+   still wins; being in the utilities layer (outside DaisyUI's sub-layers) is
+   what lets it override DaisyUI's own 20rem default width. */
+@layer utilities {
+  :where(.form-control) {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  :where(.form-control) > :where(.label) {
+    display: flex;
+    align-items: flex-end;
+    white-space: normal;
+    line-height: 1.25;
+  }
+  :where(.form-control) > :where(.input, .select, .textarea),
+  :where(.form-control) > :where(div, .relative) > :where(.input, .select, .textarea) {
+    width: 100%;
+  }
+}
