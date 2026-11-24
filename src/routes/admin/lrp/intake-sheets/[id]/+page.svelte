@@ -1,11 +1,11 @@
 <script>
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { intakeSheetsService } from '$lib/api/intake-sheets.js';
   import { schoolReportsService } from '$lib/api/school-reports.js';
   import { authState } from '$lib/stores/auth.svelte.js';
-  import { natureOfCaseLabel, statusLabel, statusBadgeClass, levelLabel } from '$lib/constants/intake-sheets.js';
+  import { natureOfCaseLabel, statusLabel, levelLabel } from '$lib/constants/intake-sheets.js';
   import { natureOfConcernLabel } from '$lib/constants/learner-reports.js';
   import { fieldErrors } from '$lib/actions/field-errors.js';
 
@@ -66,7 +66,8 @@
   });
 
   const actions = $derived(sheet?.permissions?.actions ?? {});
-  const availableActions = $derived(Object.keys(ROUTE_ACTIONS).filter((a) => actions[a] === true));
+  // Recommending as resolved is part of the Forward dialog (School and Division only), not its own button.
+  const availableActions = $derived(Object.keys(ROUTE_ACTIONS).filter((a) => a !== 'recommend_resolved' && actions[a] === true));
 
   /** @type {HTMLDialogElement|null} */
   let routeModal = $state(null);
@@ -75,9 +76,15 @@
   let routeRemarks = $state('');
   /** destination key chosen in the Forward dialog */
   let routeDestination = $state('');
+  /** "Recommend as resolved" ticked in the Forward dialog */
+  let routeRecommend = $state(false);
   /** @type {any[]} */
   const destinations = $derived(actions.destinations ?? []);
   const chosenDestination = $derived(destinations.find((d) => d.key === routeDestination) ?? null);
+  // Only the School and Division recommend, and only to the next office up.
+  const canRecommend = $derived(actions.recommend_resolved === true && !!actions.next_level);
+  const recommendApplies = $derived(canRecommend && chosenDestination?.direction === 'up' && chosenDestination?.level === actions.next_level);
+  const recommending = $derived(routeRecommend && recommendApplies);
   // Going down a level needs instructions.
   const remarksRequired = $derived(routeAction === 'forward' ? chosenDestination?.direction === 'down' : ROUTE_ACTIONS[routeAction ?? '']?.remarks === 'required');
   let routeBusy = $state(false);
@@ -89,7 +96,7 @@
   async function startRoute(action) {
     routeError = ''; routeErrors = {};
     if (action === 'review') { await sendRoute(action, ''); return; }
-    routeAction = action; routeRemarks = '';
+    routeAction = action; routeRemarks = ''; routeRecommend = false;
     routeDestination = action === 'forward' ? (destinations.find((d) => d.available && d.direction === 'up')?.key ?? destinations.find((d) => d.available)?.key ?? '') : '';
     routeModal?.showModal();
   }
@@ -103,13 +110,25 @@
     if (action !== 'review' && remarksRequired && !remarks.trim()) missing.remarks = ['Say what they should do with it.'];
     if (Object.keys(missing).length) { routeError = 'Please fix the errors shown below.'; routeErrors = missing; return; }
     routeBusy = true; routeError = ''; routeErrors = {}; error = '';
-    const res = await intakeSheetsService.routeIntakeSheet(id, /** @type {any} */ (action), remarks.trim(), action === 'forward' ? routeDestination : null);
+    // Forwarding up with "Recommend as resolved" ticked is the recommend step.
+    const step = action === 'forward' && recommending ? 'recommend_resolved' : action;
+    const res = await intakeSheetsService.routeIntakeSheet(id, /** @type {any} */ (step), remarks.trim(), step === 'forward' ? routeDestination : null);
     routeBusy = false;
     if (res.success) { sheet = res.data; routeModal?.close(); }
     else {
       const msg = Object.values(res.validationErrors || {}).flat().join(' ') || res.error || 'Could not complete this step.';
       if (routeModal?.open) { routeErrors = res.validationErrors || {}; routeError = bannerFor(res, 'Could not complete this step.'); } else error = msg;
     }
+  }
+
+  // Undo: the user's own last route step, while nobody has acted on it since.
+  let undoing = $state(false);
+  async function undoStep() {
+    undoing = true; routeBusy = true; error = '';
+    const res = await intakeSheetsService.routeIntakeSheet(id, /** @type {any} */ ('undo'), '');
+    routeBusy = false; undoing = false;
+    if (res.success) sheet = res.data;
+    else error = res.error || 'Could not undo the last step.';
   }
 
   /** Destination wording in the dialog title. @param {string|null} action */
@@ -156,13 +175,50 @@
   // People Involved, split by side of the case. The learner-victim's parents /
   // guardian belong with the complainant side — never next to the respondents.
   const COMPLAINANT_SIDE = ['LEARNER-VICTIM', 'MOTHER', 'FATHER', 'GUARDIAN', 'COMPLAINANT'];
-  const complainantSide = $derived(
-    (sheet?.persons ?? []).filter((/** @type {any} */ p) => COMPLAINANT_SIDE.includes(p.role))
-      .sort((/** @type {any} */ a, /** @type {any} */ b) => COMPLAINANT_SIDE.indexOf(a.role) - COMPLAINANT_SIDE.indexOf(b.role))
-  );
+  const PARENT_ROLES = ['MOTHER', 'FATHER', 'GUARDIAN'];
+
+  // ── Header status card ──
+  // Full class names (not built from parts) so Tailwind keeps them.
+  const STATUS_TONE = /** @type {Record<string, {bar: string, panel: string, dot: string, text: string}>} */ ({
+    draft: { bar: 'bg-base-300', panel: 'bg-base-200/60 border-base-300', dot: 'status-neutral', text: 'text-base-content' },
+    not_forwarded: { bar: 'bg-neutral/40', panel: 'bg-base-200/60 border-base-300', dot: 'status-neutral', text: 'text-base-content' },
+    for_review: { bar: 'bg-warning', panel: 'bg-warning/10 border-warning/30', dot: 'status-warning', text: 'text-warning-content' },
+    under_review: { bar: 'bg-info', panel: 'bg-info/10 border-info/30', dot: 'status-info', text: 'text-info' },
+    recommended_resolved: { bar: 'bg-accent', panel: 'bg-accent/10 border-accent/30', dot: 'status-accent', text: 'text-accent' },
+    resolved: { bar: 'bg-success', panel: 'bg-success/10 border-success/30', dot: 'status-success', text: 'text-success' }
+  });
+  const tone = $derived(STATUS_TONE[sheet?.status] ?? STATUS_TONE.draft);
+  const ROUTE_LEVELS = ['school', 'division', 'regional'];
+  /** Offices the record has been with so far. */
+  const visitedLevels = $derived(new Set([
+    sheet?.origin_level,
+    ...(sheet?.routing_events ?? []).flatMap((/** @type {any} */ e) => [e.from_level, e.to_level])
+  ].filter(Boolean)));
+  /** @param {string|null|undefined} d */
+  const fmtLongDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
+  // A complainant who is the learner-victim, mother, father or guardian isn't a
+  // second row — that person's own row is marked "Complainant" too.
+  const complainantSide = $derived.by(() => {
+    const all = (sheet?.persons ?? []).filter((/** @type {any} */ p) => COMPLAINANT_SIDE.includes(p.role));
+    const linkedTo = (/** @type {any} */ p) => p.same_as || (p.same_as_learner_victim ? 'LEARNER-VICTIM' : null);
+    const alsoComplainant = new Set(all.filter((/** @type {any} */ p) => p.role === 'COMPLAINANT' && linkedTo(p)).map(linkedTo));
+    return all
+      .filter((/** @type {any} */ p) => !(p.role === 'COMPLAINANT' && linkedTo(p) && all.some((/** @type {any} */ o) => o.role === linkedTo(p))))
+      .map((/** @type {any} */ p) => ({ ...p, also_complainant: p.role !== 'COMPLAINANT' && alsoComplainant.has(p.role) }))
+      .sort((/** @type {any} */ a, /** @type {any} */ b) => COMPLAINANT_SIDE.indexOf(a.role) - COMPLAINANT_SIDE.indexOf(b.role));
+  });
   const respondents = $derived((sheet?.persons ?? []).filter((/** @type {any} */ p) => p.role === 'ALLEGED-OFFENDER'));
+  const OFFENDER_TYPE_LABELS = /** @type {Record<string, string>} */ ({ school_personnel: 'School Personnel', student: 'Student', other: 'Other' });
+  /** @param {any} p */
+  const personDetails = (p) => [
+    OFFENDER_TYPE_LABELS[p.offender_type],
+    p.role === 'ALLEGED-OFFENDER' && p.offender_type === 'student' && p.grade ? `Grade ${p.grade}${p.section ? ` - ${p.section}` : ''}` : '',
+    p.role === 'ALLEGED-OFFENDER' && !p.birthdate && p.age != null ? `Age ${p.age}` : '',
+    p.relation_to_learner_victim || (p.role === 'COMPLAINANT' ? '' : p.occupation) || ''
+  ].filter(Boolean).join(' · ');
   /** "Mother of the learner-victim" etc. @param {any} p */
-  const sideRoleLabel = (p) => ['MOTHER', 'FATHER', 'GUARDIAN'].includes(p.role)
+  const sideRoleLabel = (p) => p.same_as_learner_victim ? 'Complainant (the learner-victim)'
+    : ['MOTHER', 'FATHER', 'GUARDIAN'].includes(p.same_as) ? `Complainant (the ${p.same_as.toLowerCase()} of the learner-victim)` : ['MOTHER', 'FATHER', 'GUARDIAN'].includes(p.role)
     ? `${ROLE_LABELS[/** @type {keyof typeof ROLE_LABELS} */ (p.role)]} of the learner-victim`
     : ROLE_LABELS[/** @type {keyof typeof ROLE_LABELS} */ (p.role)] || p.role;
 
@@ -181,8 +237,8 @@
     'detailed-incidents': {
       title: 'Incident Detail',
       idKey: 'detailed_incident_id',
-      fields: ['date_of_incident', 'is_estimated_date', 'description'],
-      emptyForm: () => ({ date_of_incident: '', is_estimated_date: false, description: '' }),
+      fields: ['date_type', 'date_of_incident', 'is_estimated_date', 'description'],
+      emptyForm: () => ({ date_type: 'exact', date_of_incident: '', is_estimated_date: false, description: '' }),
       summary: (/** @type {any} */ row) => row.description
     },
     'actions-taken': {
@@ -231,6 +287,7 @@
     /** @type {Record<string, any>} */
     const form = {};
     for (const f of cfg.fields) form[f] = row[f];
+    if (type === 'detailed-incidents') form.date_type = row.date_type || (row.date_of_incident ? 'other' : 'exact');
     childForm = form;
     childError = ''; childErrors = {};
     childModal?.showModal();
@@ -240,8 +297,12 @@
     if (!childType) return;
     // An entry with nothing in it says nothing — catch it here, on the field.
     const main = { 'detailed-incidents': 'description', 'actions-taken': 'action_taken', recommendations: 'recommendation' }[childType];
-    if (main && !String(childForm[main] ?? '').trim()) {
-      childErrors = { [main]: ['This field is required.'] }; childError = 'Please fix the errors shown below.';
+    /** @type {Record<string, string[]>} */
+    const missing = {};
+    if (main && !String(childForm[main] ?? '').trim()) missing[main] = ['This field is required.'];
+    if (childType === 'detailed-incidents' && !String(childForm.date_of_incident ?? '').trim()) missing.date_of_incident = ['Enter the date or an estimate.'];
+    if (Object.keys(missing).length) {
+      childErrors = missing; childError = 'Please fix the errors shown below.';
       return;
     }
     childSaving = true;
@@ -305,6 +366,42 @@
     if (!res.success) error = res.error || 'Could not generate the incident report.';
   }
 
+  // Print menu: one button, either form.
+  let printOpen = $state(false);
+  /** @type {HTMLDivElement|null} */
+  let printMenuRoot = $state(null);
+  const printBusy = $derived(pdfBusy || incidentPdfBusy);
+  const printItems = () => /** @type {HTMLElement[]} */ ([...(printMenuRoot?.querySelectorAll('[role="menuitem"]') ?? [])]);
+
+  async function openPrintMenu() {
+    printOpen = true;
+    await tick();
+    printItems()[0]?.focus();
+  }
+  function closePrintMenu(refocus = true) {
+    printOpen = false;
+    if (refocus) printMenuRoot?.querySelector('button')?.focus();
+  }
+  /** @param {() => Promise<void>} download */
+  function printForm(download) {
+    closePrintMenu();
+    error = '';
+    download();
+  }
+  /** @param {KeyboardEvent} e */
+  function onPrintMenuKey(e) {
+    const items = printItems();
+    const at = items.indexOf(/** @type {HTMLElement} */ (document.activeElement));
+    if (e.key === 'Escape') { e.preventDefault(); closePrintMenu(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(at + 1) % items.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(at - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === 'Tab') closePrintMenu(false);
+  }
+  /** Click anywhere else closes it. @param {MouseEvent} e */
+  function onWindowClick(e) {
+    if (printOpen && !printMenuRoot?.contains(/** @type {Node} */ (e.target))) closePrintMenu(false);
+  }
+
   // ── V. Referral: YES / NO — one answer per intake sheet ──
   /** @type {HTMLDialogElement|null} */
   let referralModal = $state(null);
@@ -346,12 +443,17 @@
   // Small icon set reused by every Add/Edit/Delete button below.
 </script>
 
+<svelte:window onclick={onWindowClick} />
+
 {#snippet plusIcon()}
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3 h-3">
     <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
   </svg>
 {/snippet}
 
+{#snippet undoIcon()}
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/></svg>
+{/snippet}
 {#snippet pencilIcon()}
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" class="w-3 h-3">
     <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
@@ -370,24 +472,63 @@
   {:else if error && !sheet}
     <div class="alert alert-error"><span>{error}</span></div>
   {:else if sheet}
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <div>
-        <h1 class="text-2xl font-bold">Intake Sheet #{sheet.intake_sheet_id}</h1>
-        <p class="text-base-content/50 mt-1">{sheet.school?.name} · {sheet.division?.name} · {new Date(sheet.date_of_intake).toLocaleDateString()}</p>
-        <span class="badge badge-sm badge-ghost mt-2">
-          {natureOfCaseLabel(sheet.nature_of_case)}{#if sheet.nature_of_case === 'OTHERS' && sheet.nature_of_case_other}: {sheet.nature_of_case_other}{/if}
-        </span>
+    <div class="card bg-base-100 shadow-sm border border-base-200 overflow-visible">
+      <div class="h-1 rounded-t-box {tone.bar}"></div>
+      <div class="p-4 sm:p-5 space-y-3">
+      <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+      <div class="min-w-0 lg:flex-1">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-base-content/50">Intake Sheet / Incident Report</p>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h1 class="text-xl sm:text-2xl font-bold tracking-tight whitespace-nowrap">LRP-{String(sheet.intake_sheet_id).padStart(5, '0')}</h1>
+          <span class="badge badge-sm badge-primary badge-soft h-auto py-0.5 whitespace-normal text-left">
+            {natureOfCaseLabel(sheet.nature_of_case)}{#if sheet.nature_of_case === 'OTHERS' && sheet.nature_of_case_other}: {sheet.nature_of_case_other}{/if}
+          </span>
+        </div>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs sm:text-sm text-base-content/70">
+          <span class="inline-flex items-center gap-1.5 min-w-0">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" class="w-4 h-4 shrink-0 text-base-content/40"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.62 48.62 0 0112 20.904a48.62 48.62 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.636 50.636 0 00-2.658-.813A59.906 59.906 0 0112 3.493a59.903 59.903 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/></svg>
+            <span class="break-words">{sheet.school?.name || 'No school'}</span>
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" class="w-4 h-4 shrink-0 text-base-content/40"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z"/></svg>
+            {sheet.division?.name || '—'}
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" class="w-4 h-4 shrink-0 text-base-content/40"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
+            Date of intake: {fmtLongDate(sheet.date_of_intake)}
+          </span>
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="badge {statusBadgeClass(sheet.status)}">{statusLabel(sheet.status)}</span>
-        <button class="btn btn-outline btn-sm gap-1.5" disabled={pdfBusy} onclick={downloadPdf} title="Download the Enhanced Intake Sheet (Annex E)">
-          {#if pdfBusy}<span class="loading loading-spinner loading-xs"></span>{:else}<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>{/if}
-          Intake Sheet PDF
-        </button>
-        <button class="btn btn-outline btn-sm gap-1.5" disabled={incidentPdfBusy} onclick={downloadIncidentReportPdf} title="Download the LRP Concern Incident Report Form">
-          {#if incidentPdfBusy}<span class="loading loading-spinner loading-xs"></span>{:else}<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>{/if}
-          Incident Report PDF
-        </button>
+      <div class="flex flex-wrap items-center gap-2 lg:justify-end lg:max-w-[50%]">
+        <!-- One Print button: the same record generates either form -->
+        <div class="relative" bind:this={printMenuRoot}>
+          <button
+            class="btn btn-outline btn-sm gap-1.5" disabled={printBusy} aria-haspopup="menu" aria-expanded={printOpen}
+            onclick={() => (printOpen ? closePrintMenu() : openPrintMenu())}
+          >
+            {#if printBusy}<span class="loading loading-spinner loading-xs"></span> Generating…{:else}
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
+              Print
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5 transition-transform {printOpen ? 'rotate-180' : ''}"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+            {/if}
+          </button>
+          {#if printOpen}
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <div
+              role="menu" tabindex="-1" aria-label="Choose a form to print" onkeydown={onPrintMenuKey}
+              class="z-30 mt-1 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg max-sm:fixed max-sm:inset-x-4 sm:absolute sm:right-0 sm:w-72"
+            >
+              <button role="menuitem" class="w-full rounded-lg px-3 py-2 text-left hover:bg-base-200 focus:bg-base-200 focus:outline-none" onclick={() => printForm(downloadPdf)}>
+                <span class="block text-sm font-medium">Enhanced Intake Sheet</span>
+                <span class="block text-xs text-base-content/60">Annex E · strictly confidential, with full names</span>
+              </button>
+              <button role="menuitem" class="w-full rounded-lg px-3 py-2 text-left hover:bg-base-200 focus:bg-base-200 focus:outline-none" onclick={() => printForm(downloadIncidentReportPdf)}>
+                <span class="block text-sm font-medium">Incident Report</span>
+                <span class="block text-xs text-base-content/60">LRP Concern form · names of minors withheld</span>
+              </button>
+            </div>
+          {/if}
+        </div>
         {#if canEditAll}
           <button class="btn btn-outline btn-sm gap-1.5" onclick={() => goto(`/admin/lrp/intake-sheets/${id}/edit`)}>
             {@render pencilIcon()}
@@ -398,6 +539,42 @@
             Delete
           </button>
         {/if}
+      </div>
+      </div>
+
+      <!-- Status panel: where the record is now, and the route so far -->
+      <div class="rounded-box border {tone.panel} px-3 py-2 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+        <div class="flex items-center gap-2.5 md:min-w-56">
+          <div class="inline-grid *:[grid-area:1/1]">
+            {#if sheet.status === 'for_review'}<div class="status status-md {tone.dot} animate-ping"></div>{/if}
+            <div class="status status-md {tone.dot}"></div>
+          </div>
+          <div class="min-w-0">
+            <p class="text-sm font-semibold leading-tight">{statusLabel(sheet.status)}</p>
+            <p class="text-xs text-base-content/70">
+              {#if sheet.status === 'resolved'}
+                Resolved by {sheet.resolved_by?.full_name ?? '—'} · {fmtDateTime(sheet.resolved_at)}
+              {:else if sheet.is_draft}
+                Not yet finalized
+              {:else}
+                With the <strong>{levelLabel(sheet.routed_to)}</strong>{#if sheet.routed_to_position_label} · {sheet.routed_to_position_label}{/if}{#if sheet.routed_at}<span class="text-base-content/50"> · since {fmtDateTime(sheet.routed_at)}</span>{/if}
+              {/if}
+            </p>
+          </div>
+        </div>
+        {#if !sheet.is_draft}
+          <ul class="steps steps-horizontal w-full text-[11px] md:flex-1 [&_.step]:grid-rows-[1.75rem_auto] [&_.step]:after:size-6 [&_.step]:after:text-[10px] [&_.step]:before:h-1">
+            {#each ROUTE_LEVELS as lvl}
+              {@const here = sheet.status !== 'resolved' && sheet.routed_to === lvl}
+              {@const been = visitedLevels.has(lvl)}
+              <li class="step {here || been ? (sheet.status === 'resolved' ? 'step-success' : 'step-primary') : ''} {here ? 'font-semibold' : 'text-base-content/60'}" data-content={here ? '●' : been ? '✓' : ''}>
+                {levelLabel(lvl)}
+              </li>
+            {/each}
+            <li class="step {sheet.status === 'resolved' ? 'step-success font-semibold' : 'text-base-content/60'}" data-content={sheet.status === 'resolved' ? '✓' : ''}>Resolved</li>
+          </ul>
+        {/if}
+      </div>
       </div>
     </div>
 
@@ -446,17 +623,16 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 class="font-semibold text-lg">Review route</h2>
-          <p class="text-sm mt-1">
-            <span class="badge badge-sm {statusBadgeClass(sheet.status)}">{statusLabel(sheet.status)}</span>
-            {#if sheet.status === 'resolved'}
-              <span class="text-base-content/60 ml-1">by {sheet.resolved_by?.full_name ?? '—'} · {fmtDateTime(sheet.resolved_at)} — read-only</span>
-            {:else if !sheet.is_draft}
-              <span class="text-base-content/60 ml-1">Now with the <strong>{levelLabel(sheet.routed_to)}</strong>{#if sheet.routed_to_position_label} · for the attention of the {sheet.routed_to_position_label}{/if}</span>
-            {/if}
-          </p>
+          <p class="text-xs text-base-content/50 mt-0.5">Review, forward, or recommend this record as resolved.</p>
         </div>
-        {#if availableActions.length}
-          <div class="flex flex-wrap gap-2">
+        {#if availableActions.length || actions.undo}
+          <div class="flex flex-wrap justify-end gap-2 ml-auto">
+            {#if actions.undo}
+              <button class="btn btn-sm btn-ghost border border-base-300 gap-1.5" disabled={routeBusy} title={actions.undo.detail || ''} onclick={undoStep}>
+                {#if routeBusy && undoing}<span class="loading loading-spinner loading-xs"></span>{:else}{@render undoIcon()}{/if}
+                {actions.undo.label}
+              </button>
+            {/if}
             {#each availableActions as a}
               <button class="btn btn-sm {ROUTE_ACTIONS[a].btn}" disabled={routeBusy} onclick={() => startRoute(a)}>
                 {#if routeBusy && a === 'review'}<span class="loading loading-spinner loading-xs"></span>{/if}
@@ -468,7 +644,9 @@
       </div>
 
       <!-- What the current user can do, in words -->
-      {#if sheet.status === 'resolved'}
+      {#if actions.undo?.label === 'Undo forward' || actions.undo?.label === 'Undo recommendation'}
+        <p class="text-xs text-base-content/60 mt-3">You sent it to the {levelLabel(sheet.routed_to)}{#if sheet.routed_to_position_label} · {sheet.routed_to_position_label}{/if}. If you forgot something, click <strong>{actions.undo.label}</strong> to take it back before they act on it.</p>
+      {:else if sheet.status === 'resolved'}
         <p class="text-xs text-base-content/60 mt-3">This intake sheet is resolved and can no longer be changed{actions.reopen ? ' — you can reopen it if needed' : ''}.</p>
       {:else if sheet.my_level && !sheet.permissions?.holds_sheet}
         <p class="text-xs text-base-content/60 mt-3">It's with the {levelLabel(sheet.routed_to)}, so your office can't change it until it is forwarded back to you.</p>
@@ -487,6 +665,27 @@
           {#if r}<span>Reviewed ({levelLabel(lvl)}) <span class="text-base-content">{r.full_name}</span> · {fmtDateTime(r.reviewed_at)}</span>{/if}
         {/each}
       </div>
+
+      <!-- Route history: collapsed under the route card, latest first -->
+      {#if sheet.routing_events?.length}
+        <details class="mt-3">
+          <summary class="cursor-pointer text-sm font-medium select-none">Route history <span class="text-base-content/50 font-normal">({sheet.routing_events.length})</span></summary>
+          <ul class="mt-2 space-y-2">
+            {#each [...sheet.routing_events].reverse() as e}
+              <li class="text-sm border-l-2 pl-3 {e.action === 'resolved' ? 'border-success' : e.action === 'returned' ? 'border-warning' : 'border-base-300'}">
+                <span class="font-medium">{EVENT_LABELS[e.action] ?? e.action}</span>
+                {#if e.action === 'forwarded' || e.action === 'recommended_resolved' || e.action === 'returned'}
+                  <span class="text-base-content/60">{' '}· {levelLabel(e.from_level)} → {placeLabel(e.to_level, e.to_position_label)}</span>
+                {:else if e.action === 'reviewed'}
+                  <span class="text-base-content/60">{' '}· {levelLabel(e.to_level)}</span>
+                {/if}
+                <span class="block text-xs text-base-content/60">{e.user?.full_name ?? '—'}{e.user?.position ? ` (${e.user.position})` : ''} · {fmtDateTime(e.created_at)}</span>
+                {#if e.remarks}<span class="block text-xs whitespace-pre-wrap break-words mt-0.5">“{e.remarks}”</span>{/if}
+              </li>
+            {/each}
+          </ul>
+        </details>
+      {/if}
     </div>
 
     {#snippet personList(/** @type {any[]} */ list, /** @type {string} */ empty)}
@@ -496,16 +695,22 @@
         <!-- Mobile: card list -->
         <div class="sm:hidden space-y-2">
           {#each list as p}
-            <div class="border border-base-200 rounded-lg p-3">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-medium text-sm">{fullName(p)}</span>
-                <span class="badge badge-sm badge-ghost shrink-0">{sideRoleLabel(p)}</span>
+            {@const lv = p.role === 'LEARNER-VICTIM'}
+            {@const par = PARENT_ROLES.includes(p.role)}
+            {@const off = p.role === 'ALLEGED-OFFENDER'}
+            <div class="rounded-lg p-3 border {lv ? 'border-primary/40 bg-primary/5 border-l-4 border-l-primary' : par ? 'border-info/30 bg-info/5 border-l-4 border-l-info' : off ? 'border-error/30 bg-error/5 border-l-4 border-l-error' : 'border-base-200'}">
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-sm min-w-0 break-words {lv || par || off ? 'font-semibold' : 'font-medium'}">{fullName(p)}</span>
+                <span class="flex flex-col items-end gap-1 max-w-[55%]">
+                  <span class="badge badge-sm {lv ? 'badge-primary' : par ? 'badge-info badge-soft' : off ? 'badge-error badge-soft' : 'badge-ghost'} h-auto py-0.5 whitespace-normal text-right leading-snug">{sideRoleLabel(p)}</span>
+                  {#if p.also_complainant}<span class="badge badge-sm badge-accent badge-outline">Complainant</span>{/if}
+                </span>
               </div>
               <p class="text-xs text-base-content/60 mt-1">
                 {#if p.role === 'LEARNER-VICTIM'}
                   {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
                 {:else}
-                  {p.relation_to_learner_victim || p.occupation || ''}
+                  {personDetails(p)}
                 {/if}
                 {#if p.contact_number} · {p.contact_number}{/if}
               </p>
@@ -518,14 +723,17 @@
             <thead><tr><th class="w-52">Role</th><th>Name</th><th>Details</th><th class="w-40">Contact</th></tr></thead>
             <tbody>
               {#each list as p}
-                <tr>
-                  <td><span class="badge badge-sm badge-ghost whitespace-nowrap">{sideRoleLabel(p)}</span></td>
-                  <td>{fullName(p)}</td>
-                  <td class="text-base-content/70">
+                {@const lv = p.role === 'LEARNER-VICTIM'}
+                {@const par = PARENT_ROLES.includes(p.role)}
+                {@const off = p.role === 'ALLEGED-OFFENDER'}
+                <tr class="align-top {lv ? 'bg-primary/5' : par ? 'bg-info/5' : off ? 'bg-error/5' : ''}">
+                  <td class={lv ? 'shadow-[inset_4px_0_0_var(--color-primary)]' : par ? 'shadow-[inset_4px_0_0_var(--color-info)]' : off ? 'shadow-[inset_4px_0_0_var(--color-error)]' : ''}><span class="badge badge-sm {lv ? 'badge-primary' : par ? 'badge-info badge-soft' : off ? 'badge-error badge-soft' : 'badge-ghost'} h-auto py-0.5 whitespace-normal text-left leading-snug">{sideRoleLabel(p)}</span>{#if p.also_complainant}<span class="badge badge-sm badge-accent badge-outline mt-1">Complainant</span>{/if}</td>
+                  <td class="break-words {lv || par || off ? 'font-semibold' : ''}">{fullName(p)}</td>
+                  <td class="text-base-content/70 break-words">
                     {#if p.role === 'LEARNER-VICTIM'}
                       {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
                     {:else}
-                      {p.relation_to_learner_victim || p.occupation || ''}
+                      {personDetails(p)}
                     {/if}
                   </td>
                   <td class="text-base-content/70">{p.contact_number || '—'}</td>
@@ -542,14 +750,36 @@
       <h2 class="font-semibold text-lg">Learner-Victim / Complainant</h2>
       <p class="text-xs text-base-content/50 mb-3">The learner-victim, their parents or guardian, and anyone who filed the complaint.</p>
       {@render personList(complainantSide, 'None recorded.')}
-      <p class="text-sm mt-2"><span class="text-base-content/50">Adviser of the learner-victim:</span> {sheet.adviser_name || '—'}</p>
+      <div class="mt-4 rounded-lg border border-secondary/30 border-l-4 border-l-secondary bg-secondary/5 p-3 sm:p-4">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span class="badge badge-sm badge-secondary">Adviser of the learner-victim</span>
+          <span class="font-semibold">{sheet.adviser_name || 'Not recorded'}</span>
+        </div>
+        {#if sheet.adviser_observation_before || sheet.adviser_observation_after}
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            {#each [['Observations before the incident', sheet.adviser_observation_before], ['Observations after the incident', sheet.adviser_observation_after]] as [label, text]}
+              <div class="rounded-md bg-base-100 border border-base-200 p-3">
+                <p class="text-xs font-medium text-base-content/60">{label}</p>
+                <p class="text-sm mt-1 whitespace-pre-wrap break-words">{text || '—'}</p>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
     </div>
 
     <!-- Respondent side -->
     <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
       <h2 class="font-semibold text-lg">Respondent / Alleged Offender{respondents.length > 1 ? 's' : ''}</h2>
       <p class="text-xs text-base-content/50 mb-3">The person or persons the complaint is against.</p>
-      {@render personList(respondents, 'No alleged offender recorded.')}
+      {#if sheet.offender_unidentified}
+        <div class="rounded-lg border border-error/30 border-l-4 border-l-error bg-error/5 p-3 text-sm">
+          <span class="badge badge-sm badge-error badge-soft mr-2">Not yet identified</span>
+          <span class="whitespace-pre-wrap break-words">{sheet.offender_description || ''}</span>
+        </div>
+      {:else}
+        {@render personList(respondents, 'No alleged offender recorded.')}
+      {/if}
     </div>
 
     <!-- Incident Details -->
@@ -578,7 +808,7 @@
                     <span class="badge badge-xs badge-neutral shrink-0 mt-1">{i + 1}</span>
                   {/if}
                   <div class="min-w-0">
-                    <p class="text-sm font-medium">{inc.date_of_incident}{#if inc.is_estimated_date} <span class="badge badge-xs badge-ghost">estimated</span>{/if}</p>
+                    <p class="text-sm font-medium">{inc.date_label || inc.date_of_incident || 'Date not entered'}{#if inc.is_estimated_date} <span class="badge badge-xs badge-ghost">estimated</span>{/if}</p>
                     <p class="text-sm text-base-content/70 whitespace-pre-wrap">{inc.description}</p>
                     <p class="text-xs text-base-content/35 mt-1">{editedBy(inc)}</p>
                   </div>
@@ -730,40 +960,13 @@
       {/if}
     </div>
 
-    <!-- Route history — kept apart from the route card so the card stays short -->
-    {#if sheet.routing_events?.length}
-      <details class="card bg-base-100 shadow-sm border border-base-200 group">
-        <summary class="p-5 cursor-pointer list-none flex items-center justify-between gap-3">
-          <span>
-            <span class="font-semibold text-lg">Route history</span>
-            <span class="text-sm text-base-content/50 ml-1">({sheet.routing_events.length})</span>
-          </span>
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 transition-transform group-open:rotate-180"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-        </summary>
-        <div class="px-5 pb-5">
-          <ol class="border-l border-base-300 ml-1.5 space-y-2">
-            {#each [...sheet.routing_events].reverse() as e}
-              <li class="pl-3 relative text-sm">
-                <span class="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full {e.action === 'resolved' ? 'bg-success' : e.action === 'returned' ? 'bg-warning' : 'bg-primary/60'}"></span>
-                <p><span class="font-medium">{EVENT_LABELS[e.action] ?? e.action}</span>
-                  {#if e.action === 'forwarded' || e.action === 'recommended_resolved' || e.action === 'returned'}<span class="text-base-content/60"> — {levelLabel(e.from_level)} → {placeLabel(e.to_level, e.to_position_label)}</span>{/if}
-                  {#if e.action === 'reviewed'}<span class="text-base-content/60"> — {levelLabel(e.to_level)}</span>{/if}
-                </p>
-                <p class="text-xs text-base-content/50">{e.user?.full_name ?? '—'}{e.user?.position ? `, ${e.user.position}` : ''} · {fmtDateTime(e.created_at)}</p>
-                {#if e.remarks}<p class="text-xs text-base-content/70 whitespace-pre-wrap mt-0.5">“{e.remarks}”</p>{/if}
-              </li>
-            {/each}
-          </ol>
-        </div>
-      </details>
-    {/if}
   {/if}
 </div>
 
 <dialog bind:this={deleteModal} class="modal modal-bottom sm:modal-middle">
   <div class="modal-box max-w-sm">
-    <h3 class="font-bold text-lg">Delete Intake Sheet</h3>
-    <p class="py-4 text-base-content/70">Are you sure you want to delete intake sheet #{sheet?.intake_sheet_id}? This can be restored later by an administrator.</p>
+    <h3 class="font-bold text-lg">Delete Intake Sheet / Incident Report</h3>
+    <p class="py-4 text-base-content/70">Are you sure you want to delete record #{sheet?.intake_sheet_id}? This can be restored later by an administrator.</p>
     <div class="modal-action">
       <button class="btn btn-ghost btn-sm" onclick={() => deleteModal?.close()}>Cancel</button>
       <button class="btn btn-error btn-sm" disabled={deleting} onclick={handleDelete}>Delete</button>
@@ -784,16 +987,29 @@
       <div class="space-y-3">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div class="form-control">
-            <label class="label py-1" for="child-date"><span class="label-text text-xs">Date of Incident</span></label>
-            <input id="child-date" data-field="date_of_incident" type="date" class="input input-bordered input-sm" bind:value={childForm.date_of_incident} />
+            <label class="label py-1" for="child-dtype"><span class="label-text text-xs">When it happened *</span></label>
+            <select id="child-dtype" class="select select-bordered select-sm" bind:value={childForm.date_type} onchange={() => { childForm.date_of_incident = ''; childForm.is_estimated_date = false; }}>
+              <option value="exact">Exact date</option>
+              <option value="month_year">Month and year</option>
+              <option value="year">Year only</option>
+              <option value="other">Other estimate</option>
+            </select>
           </div>
-          <label class="flex items-center gap-2 mt-6 cursor-pointer select-none">
-            <input type="checkbox" data-field="is_estimated_date" class="checkbox checkbox-sm" bind:checked={childForm.is_estimated_date} />
-            <span class="text-xs">Estimated date</span>
-          </label>
+          <div class="form-control">
+            <label class="label py-1" for="child-date"><span class="label-text text-xs">{{ exact: 'Exact date', month_year: 'Month and year', year: 'Year only', other: 'Other estimate' }[/** @type {'exact'} */ (childForm.date_type)]} *</span></label>
+            {#if childForm.date_type === 'exact'}
+              <input id="child-date" data-field="date_of_incident" type="date" class="input input-bordered input-sm" bind:value={childForm.date_of_incident} />
+            {:else if childForm.date_type === 'month_year'}
+              <input id="child-date" data-field="date_of_incident" type="month" class="input input-bordered input-sm" bind:value={childForm.date_of_incident} />
+            {:else if childForm.date_type === 'year'}
+              <input id="child-date" data-field="date_of_incident" type="text" inputmode="numeric" maxlength="4" placeholder="e.g. 2025" class="input input-bordered input-sm" bind:value={childForm.date_of_incident} />
+            {:else}
+              <input id="child-date" data-field="date_of_incident" type="text" maxlength="255" placeholder="e.g. around the start of the school year" class="input input-bordered input-sm" bind:value={childForm.date_of_incident} />
+            {/if}
+          </div>
         </div>
         <div class="form-control">
-          <label class="label py-1" for="child-desc"><span class="label-text text-xs">Description</span></label>
+          <label class="label py-1" for="child-desc"><span class="label-text text-xs">Details of the incident *</span></label>
           <textarea id="child-desc" data-field="description" class="textarea textarea-bordered textarea-sm w-full" rows="4" bind:value={childForm.description}></textarea>
         </div>
       </div>
@@ -900,6 +1116,17 @@
             {/each}
           </div>
         </fieldset>
+        {#if canRecommend}
+          <label class="mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm {recommendApplies ? 'cursor-pointer border-base-300' : 'border-base-200 opacity-60'} {recommending ? 'border-accent bg-accent/5' : ''}">
+            <input type="checkbox" class="checkbox checkbox-sm checkbox-accent mt-0.5" bind:checked={routeRecommend} disabled={!recommendApplies} />
+            <span>
+              <span class="font-medium">Recommend as resolved</span>
+              <span class="block text-xs text-base-content/60">{recommendApplies
+                ? 'Sent with your recommendation. Only the Regional Office can mark it resolved.'
+                : `Choose the ${levelLabel(actions.next_level)} above to recommend it as resolved.`}</span>
+            </span>
+          </label>
+        {/if}
       {/if}
       {#if cfg.remarks !== 'none'}
         <div class="form-control mt-3">
@@ -911,7 +1138,7 @@
       <div class="modal-action">
         <button class="btn btn-ghost btn-sm" onclick={() => routeModal?.close()}>Cancel</button>
         <button class="btn btn-sm {cfg.btn}" disabled={routeBusy} onclick={() => sendRoute(/** @type {string} */ (routeAction), routeRemarks)}>
-          {#if routeBusy}<span class="loading loading-spinner loading-xs"></span>{/if}{routeAction === 'forward' ? 'Forward' : cfg.label}
+          {#if routeBusy}<span class="loading loading-spinner loading-xs"></span>{/if}{routeAction === 'forward' ? (recommending ? 'Forward & Recommend as Resolved' : 'Forward') : cfg.label}
         </button>
       </div>
     {/if}

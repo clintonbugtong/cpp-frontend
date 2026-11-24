@@ -28,6 +28,19 @@ class IntakeSheetsService {
 		}
 	}
 
+	/**
+	 * Earlier records whose learner-victim has this name (within the user's access).
+	 * @param {Record<string, any>} params
+	 */
+	async findLearnerMatches(params) {
+		try {
+			const response = await api.get('/intake-sheets/learner-matches', params);
+			return { success: true, data: response };
+		} catch (err) {
+			return { success: false, error: /** @type {Error} */ (err).message };
+		}
+	}
+
 	async createIntakeSheet(data) {
 		try {
 			const response = await api.post('/intake-sheets', data);

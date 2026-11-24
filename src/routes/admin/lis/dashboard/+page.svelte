@@ -189,7 +189,7 @@
               {@const w = pct(row.count, data.users.total)}
               <div>
                 <div class="flex justify-between items-baseline mb-1">
-                  <span class="text-xs text-base-content/60 truncate pr-2 leading-tight">{row.role}</span>
+                  <span class="text-xs text-base-content/60 line-clamp-2 break-words min-w-0 pr-2 leading-tight" title={row.role}>{row.role}</span>
                   <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
                 </div>
                 <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
@@ -277,7 +277,7 @@
                 <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
                   {user.name?.charAt(0)?.toUpperCase() ?? '?'}
                 </div>
-                <span class="text-sm flex-1 truncate leading-tight">{user.name}</span>
+                <span class="text-sm flex-1 line-clamp-2 break-words min-w-0 leading-tight" title={user.name}>{user.name}</span>
                 <span class="text-xs font-bold tabular-nums bg-base-200 px-2 py-0.5 rounded-full">{user.activity_count}</span>
               </div>
             {/each}
@@ -297,7 +297,7 @@
             {#each topActions as item}
               <div>
                 <div class="flex justify-between items-baseline mb-1">
-                  <span class="text-xs text-base-content/60 truncate pr-2">{fmtAction(item.action)}</span>
+                  <span class="text-xs text-base-content/60 line-clamp-2 break-words min-w-0 pr-2" title={fmtAction(item.action)}>{fmtAction(item.action)}</span>
                   <span class="text-xs font-bold shrink-0 tabular-nums">{item.count}</span>
                 </div>
                 <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">

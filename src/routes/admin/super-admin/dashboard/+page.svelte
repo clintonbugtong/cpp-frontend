@@ -178,7 +178,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 12h6M9 16h6"/>
               </svg>
             </span>
-            <h2 class="text-sm font-semibold">Intake Sheets</h2>
+            <h2 class="text-sm font-semibold">Intake Sheet / Incident Report</h2>
           </div>
           <button class="btn btn-ghost btn-xs" onclick={() => goto('/admin/lrp/dashboard')}>
             Full LRP Dashboard →
@@ -256,7 +256,7 @@
               {@const w = pct(row.count, data.users.total)}
               <div>
                 <div class="flex justify-between items-baseline mb-1">
-                  <span class="text-xs text-base-content/60 truncate pr-2 leading-tight">{row.role}</span>
+                  <span class="text-xs text-base-content/60 line-clamp-2 break-words min-w-0 pr-2 leading-tight" title={row.role}>{row.role}</span>
                   <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
                 </div>
                 <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
@@ -331,7 +331,7 @@
             {#each topActions as item}
               <div>
                 <div class="flex justify-between items-baseline mb-1">
-                  <span class="text-xs text-base-content/60 truncate pr-2">{fmtAction(item.action)}</span>
+                  <span class="text-xs text-base-content/60 line-clamp-2 break-words min-w-0 pr-2" title={fmtAction(item.action)}>{fmtAction(item.action)}</span>
                   <span class="text-xs font-bold shrink-0 tabular-nums">{item.count}</span>
                 </div>
                 <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
@@ -365,7 +365,7 @@
             {#each data.audit_logs.top_active_users.slice(0, 3) as u, i}
               <div class="flex items-center gap-2">
                 <span class="text-xs font-bold text-base-content/20 w-4 text-center tabular-nums">{i + 1}</span>
-                <span class="text-sm flex-1 truncate">{u.name}</span>
+                <span class="text-sm flex-1 line-clamp-2 break-words min-w-0" title={u.name}>{u.name}</span>
                 <span class="text-xs font-bold tabular-nums bg-base-200 px-2 py-0.5 rounded-full">{u.activity_count}</span>
               </div>
             {/each}
@@ -378,7 +378,7 @@
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <button class="btn btn-outline btn-sm justify-start" onclick={() => goto('/admin/super-admin/users')}>User Management</button>
       <button class="btn btn-outline btn-sm justify-start" onclick={() => goto('/admin/super-admin/logs')}>Audit Logs</button>
-      <button class="btn btn-outline btn-sm justify-start" onclick={() => goto('/admin/lrp/intake-sheets')}>Intake Sheets</button>
+      <button class="btn btn-outline btn-sm justify-start" onclick={() => goto('/admin/lrp/intake-sheets')}>Intake Sheet / Incident Report</button>
       <button class="btn btn-outline btn-sm justify-start" onclick={() => goto('/admin/lrp/reports')}>Learner Reports</button>
     </div>
 

@@ -79,3 +79,32 @@ body {
     width: 100%;
   }
 }
+
+/* ── Long text wraps instead of overflowing ─────────────────────────────────
+   DaisyUI keeps labels, badges and buttons on one line (nowrap / a fixed
+   height), so long text such as "Linked to Intake Sheet / Incident Report" or
+   "Complainant (the mother of the learner-victim)" ran past its box on narrow
+   screens. Same technique as above: zero specificity, so a utility on the
+   element (whitespace-nowrap, h-8 …) still wins where one line is wanted. */
+@layer utilities {
+  :where(.label) {
+    white-space: normal;
+  }
+  :where(.badge) {
+    height: auto;
+    min-height: var(--size);
+    white-space: normal;
+    overflow-wrap: break-word;
+    line-height: 1.25;
+    padding-block: 0.125rem;
+    text-align: center;
+  }
+  :where(.btn:not(.btn-circle, .btn-square)) {
+    height: auto;
+    min-height: var(--size);
+    flex-wrap: wrap;
+    line-height: 1.25;
+    padding-block: 0.25rem;
+    text-align: center;
+  }
+}

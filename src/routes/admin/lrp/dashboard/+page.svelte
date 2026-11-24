@@ -184,7 +184,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 12h6M9 16h6"/>
         </svg>
       </span>
-      <p class="text-xs font-semibold text-primary uppercase tracking-wider">Intake Sheets</p>
+      <p class="text-xs font-semibold text-primary uppercase tracking-wider">Intake Sheet / Incident Report</p>
     </div>
 
     <!-- Section 1 — Key Metrics -->
@@ -256,7 +256,7 @@
               {@const w = pct(row.count, data.summary?.total)}
               <div>
                 <div class="flex justify-between items-baseline mb-1">
-                  <span class="text-xs text-base-content/60 truncate pr-2 leading-tight">{natureOfCaseLabel(row.nature_of_case)}</span>
+                  <span class="text-xs text-base-content/60 line-clamp-2 break-words min-w-0 pr-2 leading-tight" title={natureOfCaseLabel(row.nature_of_case)}>{natureOfCaseLabel(row.nature_of_case)}</span>
                   <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
                 </div>
                 <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
@@ -300,7 +300,7 @@
             {#each data.by_division as row}
               <div>
                 <div class="flex justify-between items-baseline mb-1">
-                  <span class="text-xs text-base-content/60 truncate pr-2">{row.name}</span>
+                  <span class="text-xs text-base-content/60 line-clamp-2 break-words min-w-0 pr-2" title={row.name}>{row.name}</span>
                   <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
                 </div>
                 <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
@@ -319,7 +319,7 @@
             {#each data.by_school as row, i}
               <div class="flex items-center gap-3">
                 <span class="text-xs font-bold text-base-content/20 w-4 text-center tabular-nums">{i + 1}</span>
-                <span class="text-sm flex-1 truncate leading-tight">{row.name}</span>
+                <span class="text-sm flex-1 line-clamp-2 break-words min-w-0 leading-tight" title={row.name}>{row.name}</span>
                 <span class="text-xs font-bold tabular-nums bg-base-200 px-2 py-0.5 rounded-full">{row.count}</span>
               </div>
             {/each}
@@ -381,7 +381,7 @@
                 {@const w = pct(row.count, reportStats.summary?.total)}
                 <div>
                   <div class="flex justify-between items-baseline mb-1">
-                    <span class="text-xs text-base-content/60 truncate pr-2 leading-tight">{natureOfConcernLabel(row.nature_of_concern)}</span>
+                    <span class="text-xs text-base-content/60 line-clamp-2 break-words min-w-0 pr-2 leading-tight" title={natureOfConcernLabel(row.nature_of_concern)}>{natureOfConcernLabel(row.nature_of_concern)}</span>
                     <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
                   </div>
                   <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
@@ -403,7 +403,7 @@
                 {@const w = pct(row.count, reportStats.summary?.total)}
                 <div>
                   <div class="flex justify-between items-baseline mb-1">
-                    <span class="text-xs text-base-content/60 truncate pr-2 leading-tight">{relationshipLabel(row.relationship)}</span>
+                    <span class="text-xs text-base-content/60 line-clamp-2 break-words min-w-0 pr-2 leading-tight" title={relationshipLabel(row.relationship)}>{relationshipLabel(row.relationship)}</span>
                     <span class="text-xs font-bold shrink-0 tabular-nums">{row.count}</span>
                   </div>
                   <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
@@ -431,7 +431,7 @@
         <TrendLineChart
           months={trendMonths.map((m) => ({ label: m.label }))}
           series={[
-            { name: 'Intake Sheets', color: 'var(--color-primary)', values: trendMonths.map((m) => m.sheets) },
+            { name: 'Intake Sheet / Incident Report', color: 'var(--color-primary)', values: trendMonths.map((m) => m.sheets) },
             { name: 'Learner Reports', color: 'var(--color-accent)', values: trendMonths.map((m) => m.reports) }
           ]}
         />
@@ -447,7 +447,7 @@
           Learner Reports
         </button>
         <button class="btn btn-primary btn-sm flex-1 sm:flex-none" onclick={() => goto('/admin/lrp/intake-sheets')}>
-          Intake Sheets
+          Intake Sheet / Incident Report
         </button>
       </div>
     </div>

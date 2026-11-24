@@ -72,7 +72,7 @@
 <div class="space-y-6">
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold">Intake Sheets</h1>
+      <h1 class="text-2xl font-bold">Intake Sheet / Incident Report</h1>
       <p class="text-base-content/50 mt-1">
         {#if authState.isIntakeSheetsReadOnly()}
           Read-only view across all divisions · {total} sheet{total !== 1 ? 's' : ''}
@@ -90,7 +90,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
         </svg>
-        New Intake Sheet
+        New Intake Sheet / Incident Report
       </button>
     {/if}
   </div>
@@ -135,7 +135,7 @@
     </div>
   {:else if sheets.length === 0}
     <div class="card bg-base-100 shadow-sm border border-base-200 py-10">
-      <p class="text-center text-base-content/50">No intake sheets found</p>
+      <p class="text-center text-base-content/50">No records found</p>
     </div>
   {:else}
     <!-- Mobile: card list (avoids horizontal-scrolling a 6-7 column table) -->
@@ -148,15 +148,15 @@
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="font-medium truncate">{sheet.learner_victim?.full_name || '—'}</p>
+              <p class="font-medium break-words min-w-0">{sheet.learner_victim?.full_name || '—'}</p>
               {#if sheet.learner_victim?.grade}
                 <p class="text-xs text-base-content/50">Grade {sheet.learner_victim.grade}{sheet.learner_victim.section ? ` - ${sheet.learner_victim.section}` : ''}</p>
               {/if}
             </div>
             <span class="badge badge-sm shrink-0 {statusBadgeClass(sheet.status)}">{statusLabel(sheet.status)}</span>
           </div>
-          <div class="mt-2 text-sm text-base-content/70 truncate">{sheet.school?.name || '—'}</div>
-          {#if isRegional}<div class="text-xs text-base-content/50 truncate">{sheet.division?.name || '—'}</div>{/if}
+          <div class="mt-2 text-sm text-base-content/70 break-words">{sheet.school?.name || '—'}</div>
+          {#if isRegional}<div class="text-xs text-base-content/50 break-words">{sheet.division?.name || '—'}</div>{/if}
           <div class="mt-2 flex items-center justify-between gap-2">
             <span class="badge badge-sm badge-ghost">{natureOfCaseLabel(sheet.nature_of_case)}</span>
             <span class="text-xs text-base-content/50">{new Date(sheet.date_of_intake).toLocaleDateString()}</span>

@@ -145,13 +145,13 @@
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="font-medium truncate">{r.is_anonymous ? 'Anonymous' : r.reporter_full_name}</p>
+              <p class="font-medium break-words min-w-0">{r.is_anonymous ? 'Anonymous' : r.reporter_full_name}</p>
               <p class="text-xs text-base-content/50">{relationshipLabel(r.reporter_relationship)}</p>
             </div>
             <span class="badge badge-sm shrink-0 {statusBadgeClass(r.status)}">{statusLabel(r.status)}</span>
           </div>
-          <div class="mt-2 text-sm text-base-content/70 truncate">{r.school?.name || '—'}</div>
-          {#if isRegional}<div class="text-xs text-base-content/50 truncate">{r.division?.name || '—'}</div>{/if}
+          <div class="mt-2 text-sm text-base-content/70 break-words">{r.school?.name || '—'}</div>
+          {#if isRegional}<div class="text-xs text-base-content/50 break-words">{r.division?.name || '—'}</div>{/if}
           <div class="mt-2 flex items-center justify-between gap-2">
             <span class="badge badge-sm badge-ghost">{natureOfConcernLabel(r.nature_of_concern)}</span>
             <span class="text-xs text-base-content/50">{fmtDate(r.created_at)}</span>

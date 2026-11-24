@@ -48,13 +48,14 @@
   let securityError = $state('');
 
   let form = $state(emptyForm());
+  const needsSchoolPosition = $derived(!!form.school_id && form.roles.includes('learner-rights-focal-person'));
 
   function emptyForm() {
     return {
       username: '', email: '', password: '', password_confirmation: '',
       first_name: '', middle_name: '', last_name: '',
       contact_number: '', position: '',
-      roles: /** @type {string[]} */ ([]), division_id: '', school_id: '', is_active: true
+      roles: /** @type {string[]} */ ([]), division_id: '', school_id: '', school_position: '', is_active: true
     };
   }
 
@@ -204,6 +205,7 @@
     if (form.middle_name) data.middle_name = form.middle_name;
     if (form.division_id) data.division_id = parseInt(form.division_id);
     if (form.school_id) data.school_id = parseInt(form.school_id);
+    if (needsSchoolPosition) data.school_position = form.school_position || null;
 
     const result = await usersService.createUser(data);
     if (result.success) {
@@ -238,6 +240,7 @@
       roles: (detail.roles || []).map((/** @type {any} */ r) => typeof r === 'string' ? r : r.slug),
       division_id: detail.division_id ? String(detail.division_id) : '',
       school_id: detail.school_id ? String(detail.school_id) : '',
+      school_position: detail.school_position || '',
       is_active: detail.is_active ?? true
     };
     if (detail.school) {
@@ -277,7 +280,8 @@
       // e.g. converting a school-level account to division-level or regional —
       // actually reaches the backend instead of being silently omitted.
       division_id: form.division_id ? parseInt(form.division_id) : null,
-      school_id: form.school_id ? parseInt(form.school_id) : null
+      school_id: form.school_id ? parseInt(form.school_id) : null,
+      school_position: needsSchoolPosition ? (form.school_position || null) : null
     };
     if (form.middle_name !== undefined) data.middle_name = form.middle_name;
     if (form.password) {
@@ -673,6 +677,18 @@
         For a Learner Right Protection Focal Person: set a division for division-level, a school for school-level (e.g. a designated guidance counselor), or leave both blank for regional. Picking one clears the other.
       </p>
 
+      {#if needsSchoolPosition}
+        <label class="form-control" data-field-wrap>
+          <span class="label-text text-xs font-medium">School Designation *</span>
+          <select class="select select-bordered select-sm w-full" data-field="school_position" bind:value={form.school_position}>
+            <option value="">Select designation</option>
+            <option value="school_head">School Head</option>
+            <option value="guidance_counselor">Guidance Counselor / Designate</option>
+          </select>
+          <span class="text-xs text-base-content/40 mt-1">The active holder is printed on the Enhanced Intake Sheet and Incident Report.</span>
+        </label>
+      {/if}
+
       <div class="form-control">
         <span class="label-text text-xs font-medium">Roles *</span>
         <div class="flex flex-wrap gap-2 mt-2">
@@ -815,6 +831,18 @@
       <p class="text-xs text-base-content/40 -mt-2">
         For a Learner Right Protection Focal Person: set a division for division-level, a school for school-level, or leave both blank for regional. Picking one clears the other.
       </p>
+
+      {#if needsSchoolPosition}
+        <label class="form-control" data-field-wrap>
+          <span class="label-text text-xs font-medium">School Designation *</span>
+          <select class="select select-bordered select-sm w-full" data-field="school_position" bind:value={form.school_position}>
+            <option value="">Select designation</option>
+            <option value="school_head">School Head</option>
+            <option value="guidance_counselor">Guidance Counselor / Designate</option>
+          </select>
+          <span class="text-xs text-base-content/40 mt-1">The active holder is printed on the Enhanced Intake Sheet and Incident Report.</span>
+        </label>
+      {/if}
 
       <div class="form-control">
         <span class="label-text text-xs font-medium">Roles *</span>

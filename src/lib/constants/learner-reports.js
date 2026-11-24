@@ -16,8 +16,9 @@ export function relationshipLabel(value) {
 
 export const STATUS_OPTIONS = [
 	{ value: 'new', label: 'New' },
+	{ value: 'for_review', label: 'For Review' },
 	{ value: 'under_review', label: 'Under Review' },
-	{ value: 'linked', label: 'Linked to Intake Sheet' },
+	{ value: 'linked', label: 'Linked to Intake Sheet / Incident Report' },
 	{ value: 'dismissed', label: 'Dismissed' }
 ];
 
@@ -30,6 +31,7 @@ export function statusLabel(value) {
 export function statusBadgeClass(value) {
 	switch (value) {
 		case 'new': return 'badge-warning';
+		case 'for_review': return 'badge-warning badge-outline';
 		case 'under_review': return 'badge-info';
 		case 'linked': return 'badge-success';
 		case 'dismissed': return 'badge-ghost';

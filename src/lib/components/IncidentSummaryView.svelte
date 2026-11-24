@@ -134,7 +134,7 @@
             <ul class="space-y-2 mt-1">
               {#each data.by_nature as n}
                 <li class="grid grid-cols-[8.5rem_1fr_2rem] items-center gap-2 text-sm">
-                  <span class="truncate" title={n.label}>{n.label}</span>
+                  <span class="line-clamp-2 break-words leading-tight" title={n.label}>{n.label}</span>
                   <span class="h-2.5 rounded-full bg-base-200 overflow-hidden flex">
                     <span class="bg-primary h-full" style="width: {(n.intake_sheets / maxNature) * 100}%"></span>
                     <span class="bg-accent h-full" style="width: {(n.learner_reports / maxNature) * 100}%"></span>
@@ -158,7 +158,7 @@
                 {#each data.by_school.slice(0, 8) as row}
                   <li class="py-2 flex items-center justify-between gap-2">
                     <span class="min-w-0">
-                      <span class="block truncate">{row.name}</span>
+                      <span class="block break-words">{row.name}</span>
                       <span class="block text-xs text-base-content/50">{data.is_regional && row.division ? `${row.division} · ` : ''}mostly {row.top_nature}</span>
                     </span>
                     <span class="tabular-nums font-semibold">{row.total}</span>

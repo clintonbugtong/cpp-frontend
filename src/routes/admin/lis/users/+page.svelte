@@ -51,13 +51,14 @@
   let securityError = $state('');
 
   let form = $state(emptyForm());
+  const needsSchoolPosition = $derived(!!form.school_id && form.roles.includes('learner-rights-focal-person'));
 
   function emptyForm() {
     return {
       username: '', email: '', password: '', password_confirmation: '',
       first_name: '', middle_name: '', last_name: '',
       contact_number: '', position: '',
-      roles: /** @type {string[]} */ ([]), school_id: '', is_active: true
+      roles: /** @type {string[]} */ ([]), school_id: '', school_position: '', is_active: true
     };
   }
 
@@ -191,6 +192,7 @@
     };
     if (form.middle_name) data.middle_name = form.middle_name;
     if (form.school_id) data.school_id = parseInt(form.school_id);
+    if (needsSchoolPosition) data.school_position = form.school_position || null;
 
     const result = await usersService.createUser(data);
     if (result.success) {
@@ -230,6 +232,7 @@
       position: detail.position || '',
       roles: (detail.roles || []).map((/** @type {any} */ r) => typeof r === 'string' ? r : r.slug),
       school_id: detail.school_id ? String(detail.school_id) : '',
+      school_position: detail.school_position || '',
       is_active: detail.is_active ?? true
     };
     if (detail.school) {
@@ -261,7 +264,8 @@
       is_active: form.is_active,
       // Always sent explicitly so clearing it (back to division-level) reaches
       // the backend instead of being silently omitted.
-      school_id: form.school_id ? parseInt(form.school_id) : null
+      school_id: form.school_id ? parseInt(form.school_id) : null,
+      school_position: needsSchoolPosition ? (form.school_position || null) : null
     };
     // Only re-anchor to this admin's own division when an existing school
     // assignment was just cleared — otherwise leave division_id untouched so
@@ -643,6 +647,18 @@
         {/if}
       </div>
 
+      {#if needsSchoolPosition}
+        <label class="form-control" data-field-wrap>
+          <span class="label-text text-xs font-medium">School Designation *</span>
+          <select class="select select-bordered select-sm w-full" data-field="school_position" bind:value={form.school_position}>
+            <option value="">Select designation</option>
+            <option value="school_head">School Head</option>
+            <option value="guidance_counselor">Guidance Counselor / Designate</option>
+          </select>
+          <span class="text-xs text-base-content/40 mt-1">The active holder is printed on the Enhanced Intake Sheet and Incident Report.</span>
+        </label>
+      {/if}
+
       <div class="form-control">
         <span class="label-text text-xs font-medium">Roles *</span>
         <div class="flex flex-wrap gap-2 mt-2">
@@ -761,6 +777,18 @@
           <p class="text-xs text-base-content/40 mt-1">Leave blank for a division-level account (the default).</p>
         {/if}
       </div>
+
+      {#if needsSchoolPosition}
+        <label class="form-control" data-field-wrap>
+          <span class="label-text text-xs font-medium">School Designation *</span>
+          <select class="select select-bordered select-sm w-full" data-field="school_position" bind:value={form.school_position}>
+            <option value="">Select designation</option>
+            <option value="school_head">School Head</option>
+            <option value="guidance_counselor">Guidance Counselor / Designate</option>
+          </select>
+          <span class="text-xs text-base-content/40 mt-1">The active holder is printed on the Enhanced Intake Sheet and Incident Report.</span>
+        </label>
+      {/if}
 
       <div class="form-control">
         <span class="label-text text-xs font-medium">Roles *</span>

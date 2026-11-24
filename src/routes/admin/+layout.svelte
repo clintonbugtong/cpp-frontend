@@ -82,8 +82,8 @@
     '/admin/lis/schools': 'School Management',
     '/admin/lis/logs': 'Audit Logs',
     '/admin/lrp/dashboard': 'LRP Dashboard',
-    '/admin/lrp/intake-sheets': 'Intake Sheets',
-    '/admin/lrp/intake-sheets/new': 'New Intake Sheet',
+    '/admin/lrp/intake-sheets': 'Intake Sheet / Incident Report',
+    '/admin/lrp/intake-sheets/new': 'New Intake Sheet / Incident Report',
     '/admin/lrp/reports': 'Learner Reports',
     '/admin/lrp/faqs': 'Manage FAQs',
     '/admin/lrp/school-report': 'Monthly Report',
@@ -101,9 +101,9 @@
     if (pageTitleMap[path]) {
       currentRole = pageTitleMap[path];
     } else if (path.match(/\/lrp\/intake-sheets\/.+\/edit/)) {
-      currentRole = 'Edit Intake Sheet';
+      currentRole = 'Edit Intake Sheet / Incident Report';
     } else if (path.match(/\/lrp\/intake-sheets\/.+/)) {
-      currentRole = 'Intake Sheet Details';
+      currentRole = 'Intake Sheet / Incident Report Details';
     } else if (path.match(/\/lrp\/reports\/.+/)) {
       currentRole = 'Learner Report Details';
     } else if (path.includes('/super-admin')) {
@@ -331,7 +331,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 flex-shrink-0">
                 <path stroke-linecap="round" stroke-linejoin="round" d={getIcon(item.icon)} />
               </svg>
-              <span class="truncate">{item.name}</span>
+              <span class="leading-tight">{item.name}</span>
             </button>
           {/each}
         </nav>

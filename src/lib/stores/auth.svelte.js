@@ -66,7 +66,7 @@ class AuthState {
       menuItems: [
         { name: 'Super Admin', role: 'Super Admin', path: '/admin/super-admin/dashboard', icon: 'shield' },
         { name: 'LRP Dashboard', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/dashboard', icon: 'clipboard-list' },
-        { name: 'Intake Sheets', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
+        { name: 'Intake Sheet / Incident Report', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
         { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' },
         { name: 'Manage FAQs', path: '/admin/lrp/faqs', icon: 'faq' },
         { name: 'User Management', path: '/admin/super-admin/users', icon: 'users' },
@@ -107,7 +107,7 @@ class AuthState {
       accessibleDashboards: ['Learner Right Protection Focal Person'],
       menuItems: [
         { name: 'Dashboard', role: 'Learner Right Protection Focal Person', path: '/admin/lrp/dashboard', icon: 'dashboard' },
-        { name: 'Intake Sheets', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
+        { name: 'Intake Sheet / Incident Report', path: '/admin/lrp/intake-sheets', icon: 'clipboard-list' },
         { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' },
         // Only a school account files the school's monthly incident report;
         // division/regional accounts monitor every school's compliance instead.

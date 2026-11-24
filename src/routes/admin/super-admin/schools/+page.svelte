@@ -277,7 +277,7 @@
         <div class="card bg-base-100 shadow-sm border border-base-200 p-4">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="font-medium truncate">{school.name}</p>
+              <p class="font-medium break-words min-w-0">{school.name}</p>
               <p class="text-xs text-base-content/50">{school.school_id_number} · {school.division?.name || '—'}</p>
             </div>
             <span class="badge badge-sm shrink-0 {statusBadgeClass(school.status)}">{statusLabel(school.status)}</span>
