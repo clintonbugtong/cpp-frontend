@@ -1,9 +1,11 @@
 <script>
+  import { gradeLabel, gradeSection } from '$lib/constants/grade-levels.js';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { learnerReportsService } from '$lib/api/learner-reports.js';
   import { schoolReportsService } from '$lib/api/school-reports.js';
+  import PrintMenu from '$lib/components/PrintMenu.svelte';
   import { natureOfConcernLabel, relationshipLabel, statusLabel } from '$lib/constants/learner-reports.js';
 
   const id = page.params.id ?? '';
@@ -93,6 +95,16 @@
     linked: { bar: 'bg-success', panel: 'bg-success/10 border-success/30', dot: 'status-success' },
     dismissed: { bar: 'bg-neutral/40', panel: 'bg-base-200/60 border-base-300', dot: 'status-neutral' }
   });
+  // Colour of the Nature of Concern highlight — same scheme as the intake sheet page.
+  const NATURE_TONE = /** @type {Record<string, {box: string, icon: string}>} */ ({
+    red: { box: 'border-error/30 bg-error/10 text-error', icon: 'bg-error/15 text-error' },
+    orange: { box: 'border-warning/50 bg-warning/15 text-base-content', icon: 'bg-warning text-warning-content' },
+    blue: { box: 'border-info/30 bg-info/10 text-base-content', icon: 'bg-info text-info-content' }
+  });
+  const natureTone = $derived(NATURE_TONE[
+    ['CHILD_ABUSE', 'PHYSICAL_ABUSE', 'SEXUAL_ABUSE_HARASSMENT'].includes(report?.nature_of_concern) ? 'red'
+      : ['BULLYING', 'NON_BULLYING', 'DISCRIMINATION', 'NEGLECT'].includes(report?.nature_of_concern) ? 'orange' : 'blue'
+  ]);
   const tone = $derived(STATUS_TONE[report?.status] ?? STATUS_TONE.new);
   /** @param {string|null|undefined} d */
   const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
@@ -108,7 +120,7 @@
   }
 </script>
 
-<div class="max-w-3xl mx-auto space-y-6">
+<div class="max-w-4xl mx-auto space-y-6">
   {#if loading}
     <div class="text-center py-16"><span class="loading loading-spinner loading-lg"></span></div>
   {:else if error && !report}
@@ -120,10 +132,18 @@
       <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
       <div class="min-w-0 lg:flex-1">
         <p class="text-[11px] font-medium uppercase tracking-wider text-base-content/50">Learner Report</p>
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <h1 class="text-xl sm:text-2xl font-bold tracking-tight whitespace-nowrap">Report #{report.learner_report_id}</h1>
-          <span class="badge badge-sm badge-primary badge-soft h-auto py-0.5 whitespace-normal text-left">
-            {natureOfConcernLabel(report.nature_of_concern)}{#if report.nature_of_concern === 'OTHERS' && report.nature_of_concern_other}: {report.nature_of_concern_other}{/if}
+        <h1 class="text-xl sm:text-2xl font-bold tracking-tight whitespace-nowrap">RPT-{String(report.learner_report_id).padStart(5, '0')}</h1>
+        <!-- Nature of concern: the headline of the report (same as the intake sheet page) -->
+        <div class="mt-2 inline-flex max-w-full items-start gap-2.5 rounded-xl border px-3 py-2 {natureTone.box}">
+          <span class="grid place-items-center w-8 h-8 shrink-0 rounded-lg {natureTone.icon}">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-[18px] h-[18px]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+          </span>
+          <span class="min-w-0">
+            <span class="block text-[10px] font-semibold uppercase tracking-wider opacity-70">Nature of Concern</span>
+            <span class="block text-base sm:text-lg font-bold leading-tight break-words">{natureOfConcernLabel(report.nature_of_concern)}</span>
+            {#if (report.nature_of_concern === 'OTHERS' || report.nature_of_concern === 'NON_BULLYING') && report.nature_of_concern_other}
+              <span class="block text-sm font-medium leading-snug break-words opacity-90">{report.nature_of_concern_other}</span>
+            {/if}
           </span>
         </div>
         <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs sm:text-sm text-base-content/70">
@@ -142,10 +162,7 @@
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-2 lg:justify-end lg:max-w-[50%]">
-        <button class="btn btn-outline btn-sm gap-1.5" disabled={pdfBusy} onclick={downloadPdf} title="Download a printable PDF">
-          {#if pdfBusy}<span class="loading loading-spinner loading-xs"></span>{:else}<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>{/if}
-          PDF
-        </button>
+        <PrintMenu items={[{ title: 'Learner Report', description: 'On the DepEd CAR letterhead · strictly confidential', icon: 'document', tone: 'accent', run: downloadPdf }]} />
       </div>
       </div>
 
@@ -190,12 +207,12 @@
       <div class="alert alert-error text-sm"><span>{error}</span></div>
     {/if}
 
-    <!-- Review route inside the school: School Head ⇄ Guidance Counselor / Designate → intake sheet -->
+    <!-- Review route inside the school: School Head ⇄ Guidance Counselor / Designate → intake sheet (same layout as the intake sheet's) -->
     <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 class="font-semibold text-lg">Review route</h2>
-          <p class="text-xs text-base-content/50 mt-0.5">Reviewed by the School Head or the Guidance Counselor / Designate, then made into an intake sheet / incident report.</p>
+          <p class="text-xs text-base-content/50 mt-0.5">Review, forward, or make this report an intake sheet / incident report.</p>
         </div>
         {#if actions.undo || actions.review || actions.forward || actions.create_intake_sheet || actions.dismiss}
           <div class="flex flex-wrap justify-end gap-2 ml-auto">
@@ -232,15 +249,21 @@
       {:else if actions.forward && actions.forward.available === false}
         <p class="text-xs text-base-content/60 mt-3">{actions.forward.reason} You can still make it an intake sheet / incident report or dismiss it.</p>
       {:else if report.status === 'for_review' && actions.undo}
-        <p class="text-xs text-base-content/60 mt-3">You sent it to the {report.routed_to_position_label}. If you forgot something, click <strong>{actions.undo.label}</strong> to take it back before they review it.</p>
+        <p class="text-xs text-base-content/60 mt-3">You sent it to the {report.routed_to_position_label}. If you forgot something, click <strong>{actions.undo.label}</strong> to take it back before they review it.{#if actions.create_intake_sheet} As the school's LRP focal person, you can still make it an intake sheet / incident report, link an existing one, or dismiss it.{/if}</p>
+      {:else if (report.status === 'for_review' || report.status === 'under_review') && actions.create_intake_sheet && !actions.forward && !actions.review}
+        <p class="text-xs text-base-content/60 mt-3">It's with the {report.routed_to_position_label}. As the school's LRP focal person, you can still make it an intake sheet / incident report, link an existing one, or dismiss it.</p>
       {:else if report.status === 'for_review' && !actions.undo}
         <p class="text-xs text-base-content/60 mt-3">It's with the {report.routed_to_position_label} for review.</p>
       {:else if (report.status === 'new' || report.status === 'under_review') && !actions.create_intake_sheet && !actions.review}
         <p class="text-xs text-base-content/60 mt-3">{report.status === 'new' ? 'The school has not reviewed it yet.' : `It's being handled by the ${report.routed_to_position_label || 'school'}.`} Only the School Head or the Guidance Counselor / Designate of this school can act on it.</p>
       {/if}
 
+      <!-- Who: reporter, reviewer, and the intake sheet it became -->
       <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-base-content/60 mt-3 pt-3 border-t border-base-200">
-        <span>Reviewed by <span class="text-base-content">{report.reviewed_by?.full_name || '—'}</span>{#if report.reviewed_at} · {fmtDateTime(report.reviewed_at)}{/if}</span>
+        <span>Submitted by <span class="text-base-content">{report.is_anonymous ? 'Anonymous' : report.reporter_full_name || '—'}</span>{' '}· {fmtDateTime(report.created_at)}</span>
+        {#if report.reviewed_by}
+          <span>Reviewed{#if report.reviewed_by.school_position}{' '}({POSITION_SHORT[report.reviewed_by.school_position]}){/if}{' '}<span class="text-base-content">{report.reviewed_by.full_name}</span>{#if report.reviewed_at}{' '}· {fmtDateTime(report.reviewed_at)}{/if}</span>
+        {/if}
         {#if report.linked_intake_sheet}<span>Intake sheet <a class="link link-primary" href={`/admin/lrp/intake-sheets/${report.linked_intake_sheet.intake_sheet_id}`}>{lrpNo(report.linked_intake_sheet.intake_sheet_id)}</a></span>{/if}
       </div>
 
@@ -268,9 +291,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm [&>p]:break-words [&>p]:min-w-0">
         <p><span class="text-base-content/50">Name:</span> {report.is_anonymous ? 'Anonymous' : report.reporter_full_name}</p>
         <p><span class="text-base-content/50">Relationship:</span> {relationshipLabel(report.reporter_relationship)}</p>
-        {#if report.reporter_grade || report.reporter_section}
-          <p><span class="text-base-content/50">Learner's Grade/Section:</span> {report.reporter_grade || '—'} {report.reporter_section ? `- ${report.reporter_section}` : ''}</p>
-        {/if}
+        <p><span class="text-base-content/50">Learner's Grade / Section:</span> {#if report.reporter_grade || report.reporter_section}{gradeSection(report.reporter_grade, report.reporter_section)}{:else}<span class="text-base-content/40 italic">Not given</span>{/if}</p>
         <p><span class="text-base-content/50">Contact Number:</span> {report.reporter_contact_number || '—'}</p>
         <p><span class="text-base-content/50">Email:</span> {report.reporter_email || '—'}</p>
       </div>

@@ -6,6 +6,8 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client.js';
   import { schoolReportsService, reportStatus, MONTH_NAMES, phNow } from '$lib/api/school-reports.js';
+  import Pagination from '$lib/components/Pagination.svelte';
+  import PrintMenu from '$lib/components/PrintMenu.svelte';
   import SchoolAccountDialog from '$lib/components/SchoolAccountDialog.svelte';
 
   /** @type {{ canFilterDivision?: boolean, canEditPersonnel?: boolean }} */
@@ -75,6 +77,12 @@
       && (!q || s.school_name.toLowerCase().includes(q) || String(s.school_id_number).toLowerCase().includes(q)));
   });
 
+  // Schools are shown a page at a time; back to page 1 when the list changes.
+  const PER_PAGE = 20;
+  let schoolPage = $state(1);
+  const pagedRows = $derived(rows.slice((schoolPage - 1) * PER_PAGE, schoolPage * PER_PAGE));
+  $effect(() => { void rows; schoolPage = 1; });
+
   const s = $derived(data?.summary);
   const multiDivision = $derived(new Set((data?.schools ?? []).map((/** @type {any} */ x) => x.division?.id)).size > 1);
 
@@ -112,6 +120,9 @@
   const incLabel = (n) => `${n} incident${n === 1 ? '' : 's'}`;
   /** @param {number} n */
   const pct = (n) => (s?.schools ? (n / s.schools) * 100 : 0);
+
+  const compliancePrintItems = $derived([{ title: 'Zero Incident Compliance Report', description: `${data?.period?.label ?? ''} · every school's monthly report status`,
+    icon: /** @type {const} */ ('check'), tone: /** @type {const} */ ('primary'), run: downloadPdf }]);
 </script>
 
 <div class="space-y-5">
@@ -127,12 +138,7 @@
           Email reminders
         </button>
       {/if}
-      <button class="btn btn-primary btn-sm" disabled={downloading || !data} onclick={downloadPdf}>
-        {#if downloading}<span class="loading loading-spinner loading-xs"></span>{:else}
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-        {/if}
-        Download PDF
-      </button>
+      <PrintMenu disabled={!data} items={compliancePrintItems} />
     </div>
   </div>
 
@@ -215,7 +221,7 @@
 
     <!-- Mobile cards -->
     <div class="space-y-2 md:hidden">
-      {#each rows as r (r.school_id)}
+      {#each pagedRows as r (r.school_id)}
         {@const st = reportStatus(r.status)}
         <div class="rounded-lg border border-base-200 bg-base-100 p-3">
           <div class="flex items-start justify-between gap-2">
@@ -254,7 +260,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each rows as r (r.school_id)}
+            {#each pagedRows as r (r.school_id)}
               {@const st = reportStatus(r.status)}
               <tr class="hover">
                 <td>
@@ -286,6 +292,7 @@
         </table>
       </div>
     </div>
+    <Pagination bind:page={schoolPage} total={rows.length} perPage={PER_PAGE} noun="schools" />
   {/if}
 </div>
 

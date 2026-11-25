@@ -17,9 +17,12 @@ const ok = (data) => ({ success: true, data });
 const clean = (params) => Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== null && v !== undefined));
 
 class SchoolReportsService {
-	/** The school account's own page: months, live counts, personnel. */
-	async getMine() {
-		try { return ok(await api.get('/school-reports/my')); } catch (err) { return fail(err); }
+	/**
+	 * The school account's own page: months, live counts, personnel.
+	 * @param {Record<string, any>} [params] period_type / year / month / quarter for the history list
+	 */
+	async getMine(params = {}) {
+		try { return ok(await api.get('/school-reports/my', clean(params))); } catch (err) { return fail(err); }
 	}
 
 	/** @param {{period_year: number, period_month: number, declaration?: 'zero_incident', remarks?: string}} payload */
@@ -59,6 +62,20 @@ class SchoolReportsService {
 	/** The holder moved out — deactivate (never delete). @param {any} userId @param {{ended_at: string, end_reason: string}} payload */
 	async deactivateAccount(userId, payload) {
 		try { return ok(await api.post(`/school-accounts/${userId}/deactivate`, payload)); } catch (err) { return fail(err); }
+	}
+
+	// ── School Head without a system account ──
+	/** @param {{school_id: any, full_name: string, designation?: string, contact_number?: string, started_at: string}} payload */
+	async recordSchoolHead(payload) {
+		try { return ok(await api.post('/school-accounts/school-head', payload)); } catch (err) { return fail(err); }
+	}
+	/** @param {any} personnelId @param {{full_name: string, designation?: string, contact_number?: string, started_at: string}} payload */
+	async updateSchoolHead(personnelId, payload) {
+		try { return ok(await api.put(`/school-accounts/school-head/${personnelId}`, payload)); } catch (err) { return fail(err); }
+	}
+	/** @param {any} personnelId @param {{ended_at: string, end_reason: string}} payload */
+	async endSchoolHead(personnelId, payload) {
+		try { return ok(await api.post(`/school-accounts/school-head/${personnelId}/end`, payload)); } catch (err) { return fail(err); }
 	}
 
 	// ── PDFs ──

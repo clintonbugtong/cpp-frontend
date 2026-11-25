@@ -1,11 +1,13 @@
 <script>
+  import Pagination from '$lib/components/Pagination.svelte';
+  import { gradeLabel, gradeSection } from '$lib/constants/grade-levels.js';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { intakeSheetsService } from '$lib/api/intake-sheets.js';
   import { authState } from '$lib/stores/auth.svelte.js';
   import { api } from '$lib/api/client.js';
-  import { NATURE_OF_CASE_OPTIONS, natureOfCaseLabel, STATUS_OPTIONS, statusLabel, statusBadgeClass, levelLabel } from '$lib/constants/intake-sheets.js';
+  import { NATURE_OF_CASE_OPTIONS, natureOfCaseLabel, STATUS_OPTIONS, statusLabel, statusBadgeClass, levelLabel, needsSpecify } from '$lib/constants/intake-sheets.js';
 
   /** @type {any[]} */
   let sheets = $state([]);
@@ -16,8 +18,11 @@
   let statusFilter = $state(page.url.searchParams.get('status') || '');
   let divisionFilter = $state('');
   let natureFilter = $state('');
+  /** '' = newest added first, or 'date_of_intake' */
+  let sortBy = $state('');
   let currentPage = $state(1);
   let totalPages = $state(1);
+  let totalCount = $state(0);
   let total = $state(0);
 
   const isRegional = authState.user?.organizationLevel === 'regional';
@@ -45,11 +50,13 @@
     if (statusFilter) params.status = statusFilter;
     if (divisionFilter) params.division_id = divisionFilter;
     if (natureFilter) params.nature_of_case = natureFilter;
+    if (sortBy) params.sort = sortBy;
 
     const result = await intakeSheetsService.getIntakeSheets(params);
     if (result.success) {
       sheets = result.data?.data || [];
       totalPages = result.data?.last_page || 1;
+      totalCount = result.data?.total ?? 0;
       total = result.data?.total || 0;
     } else {
       error = result.error || 'Failed to load intake sheets';
@@ -115,6 +122,10 @@
         <option value={opt.value}>{opt.label}</option>
       {/each}
     </select>
+    <select class="select select-bordered w-full sm:w-52" aria-label="Sort" bind:value={sortBy} onchange={handleFilterChange}>
+      <option value="">Sort: Newest added</option>
+      <option value="date_of_intake">Sort: Date of intake</option>
+    </select>
     {#if isRegional && divisions.length}
       <select class="select select-bordered w-full sm:w-56" bind:value={divisionFilter} onchange={handleFilterChange}>
         <option value="">All Divisions</option>
@@ -148,9 +159,10 @@
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="font-medium break-words min-w-0">{sheet.learner_victim?.full_name || '—'}</p>
+              <span class="badge badge-sm badge-primary font-mono whitespace-nowrap mb-1">LRP-{String(sheet.intake_sheet_id).padStart(5, '0')}</span>
+              <p class="font-medium break-words min-w-0">{sheet.learner_victim?.full_name || (sheet.nature_of_case === 'NON_BULLYING' ? 'No learner-victim' : '—')}</p>
               {#if sheet.learner_victim?.grade}
-                <p class="text-xs text-base-content/50">Grade {sheet.learner_victim.grade}{sheet.learner_victim.section ? ` - ${sheet.learner_victim.section}` : ''}</p>
+                <p class="text-xs text-base-content/50">{gradeSection(sheet.learner_victim.grade, sheet.learner_victim.section)}</p>
               {/if}
             </div>
             <span class="badge badge-sm shrink-0 {statusBadgeClass(sheet.status)}">{statusLabel(sheet.status)}</span>
@@ -158,7 +170,7 @@
           <div class="mt-2 text-sm text-base-content/70 break-words">{sheet.school?.name || '—'}</div>
           {#if isRegional}<div class="text-xs text-base-content/50 break-words">{sheet.division?.name || '—'}</div>{/if}
           <div class="mt-2 flex items-center justify-between gap-2">
-            <span class="badge badge-sm badge-ghost">{natureOfCaseLabel(sheet.nature_of_case)}</span>
+            <span class="badge badge-sm badge-ghost h-auto whitespace-normal text-left">{sheet.nature_label || natureOfCaseLabel(sheet.nature_of_case)}</span>
             <span class="text-xs text-base-content/50">{new Date(sheet.date_of_intake).toLocaleDateString()}</span>
           </div>
         </button>
@@ -171,6 +183,7 @@
         <table class="table">
           <thead>
             <tr>
+              <th class="whitespace-nowrap">LRP No.</th>
               <th>Learner</th>
               <th>School</th>
               {#if isRegional}<th>Division</th>{/if}
@@ -183,16 +196,17 @@
           <tbody>
             {#each sheets as sheet}
               <tr class="hover cursor-pointer" onclick={() => goto(`/admin/lrp/intake-sheets/${sheet.intake_sheet_id}`)}>
+                <td><span class="badge badge-sm badge-primary font-mono whitespace-nowrap">LRP-{String(sheet.intake_sheet_id).padStart(5, '0')}</span></td>
                 <td>
-                  <p class="font-medium">{sheet.learner_victim?.full_name || '—'}</p>
+                  <p class="font-medium">{sheet.learner_victim?.full_name || (sheet.nature_of_case === 'NON_BULLYING' ? 'No learner-victim' : '—')}</p>
                   {#if sheet.learner_victim?.grade}
-                    <p class="text-xs text-base-content/50">Grade {sheet.learner_victim.grade}{sheet.learner_victim.section ? ` - ${sheet.learner_victim.section}` : ''}</p>
+                    <p class="text-xs text-base-content/50">{gradeSection(sheet.learner_victim.grade, sheet.learner_victim.section)}</p>
                   {/if}
                 </td>
                 <td class="text-sm">{sheet.school?.name || '—'}</td>
                 {#if isRegional}<td class="text-sm text-base-content/70">{sheet.division?.name || '—'}</td>{/if}
                 <td class="text-sm">
-                  <span class="badge badge-sm badge-ghost">{natureOfCaseLabel(sheet.nature_of_case)}</span>
+                  <span class="badge badge-sm badge-ghost h-auto whitespace-normal text-left">{sheet.nature_label || natureOfCaseLabel(sheet.nature_of_case)}</span>
                 </td>
                 <td class="text-sm">{new Date(sheet.date_of_intake).toLocaleDateString()}</td>
                 <td>
@@ -209,16 +223,5 @@
     </div>
   {/if}
 
-  {#if totalPages > 1}
-    <div class="card bg-base-100 shadow-sm border border-base-200 p-4 flex flex-row items-center justify-between">
-      <span class="text-sm text-base-content/50">Page {currentPage} of {totalPages}</span>
-      <div class="join">
-        <button class="join-item btn btn-sm" disabled={currentPage <= 1} onclick={() => changePage(currentPage - 1)}>«</button>
-        {#each Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1) as p}
-          <button class="join-item btn btn-sm {p === currentPage ? 'btn-active' : ''}" onclick={() => changePage(p)}>{p}</button>
-        {/each}
-        <button class="join-item btn btn-sm" disabled={currentPage >= totalPages} onclick={() => changePage(currentPage + 1)}>»</button>
-      </div>
-    </div>
-  {/if}
+  <Pagination page={currentPage} pages={totalPages} total={totalCount} noun="records" onchange={changePage} />
 </div>

@@ -5,7 +5,8 @@
   import { learnerReportsService } from '$lib/api/learner-reports.js';
   import { authState } from '$lib/stores/auth.svelte.js';
   import { api } from '$lib/api/client.js';
-  import { NATURE_OF_CASE_OPTIONS } from '$lib/constants/intake-sheets.js';
+  import { NATURE_OF_CASE_OPTIONS, needsSpecify } from '$lib/constants/intake-sheets.js';
+  import { GRADE_GROUPS, normalizeGrade, gradeSection } from '$lib/constants/grade-levels.js';
   import { relationshipLabel } from '$lib/constants/learner-reports.js';
 
   /** @type {{ intakeSheetId?: number|string|null, fromReportId?: number|string|null }} */
@@ -95,6 +96,12 @@
   // details are entered here. Relation is always "Self".
   let learnerIsComplainant = $state(false);
   let selfComplainant = $state({ occupation: '' });
+  // Non-bullying: the learner-victim (with their adviser), parents / guardian and
+  // complainant are optional; the respondent is still required.
+  const nonBullying = $derived(header.nature_of_case === 'NON_BULLYING');
+  /** The learner-victim is sent unless it's an optional one left blank. */
+  const learnerIncluded = $derived(!nonBullying || ['first_name', 'middle_name', 'last_name', 'birthdate', 'sex', 'grade', 'section', 'contact_number', 'address']
+    .some((f) => String(/** @type {any} */ (learner)[f] ?? '').trim() !== ''));
 
   // ── "Is this the same learner?" — while the learner-victim's first and last
   // name are typed, earlier records with the same name are looked up. A match
@@ -139,7 +146,7 @@
     learner = {
       ...learner, ...keep,
       first_name: m.first_name || '', middle_name: m.middle_name || '', last_name: m.last_name || '',
-      birthdate: m.birthdate?.slice(0, 10) || '', sex: m.sex || '', grade: m.grade || '', section: m.section || '',
+      birthdate: m.birthdate?.slice(0, 10) || '', sex: m.sex || '', grade: normalizeGrade(m.grade), section: m.section || '',
       contact_number: m.contact_number || '', address: m.address || ''
     };
     if (!adviserName.trim() && m.adviser_name) adviserName = m.adviser_name;
@@ -270,7 +277,7 @@
     schoolQuery = r.school?.name || '';
 
     // Grade/section always describe the learner, regardless of who reported.
-    learner.grade = r.reporter_grade || '';
+    learner.grade = normalizeGrade(r.reporter_grade);
     learner.section = r.reporter_section || '';
 
     if (r.reporter_relationship === 'STUDENT') {
@@ -320,7 +327,7 @@
           ? `It has been forwarded and is now with the ${where}. Your office can't change it until it is forwarded back to your office.`
           : data.permissions.actions?.review
             ? 'Open the intake sheet and click "Review" first — editing is enabled once you have reviewed it.'
-            : 'Only the person who created it or a user from the same school can change the case details and the people involved. Division and regional focal persons can update Incident Details, Initial Actions Taken and Recommendations / Next Steps (including the Referral) from the intake sheet\'s page.';
+            : `Only the ${{ school: 'School', division: 'Division Office', regional: 'Regional Office' }[/** @type {'school'|'division'|'regional'} */ (data.origin_level || 'school')]}, where it was created, can change the case details, the people involved and the Incident Details. Other offices update Initial Actions Taken and Recommendations / Next Steps (including the Referral) from the intake sheet's page.`;
       noFullEdit = true;
       loading = false;
       return;
@@ -343,7 +350,7 @@
       person_id: p.person_id,
       first_name: p.first_name || '', middle_name: p.middle_name || '', last_name: p.last_name || '',
       birthdate: p.birthdate?.slice(0, 10) || '', age: p.age ?? '', offender_type: p.offender_type || '', sex: p.sex || '',
-      grade: p.grade || '', section: p.section || '', occupation: p.occupation || '',
+      grade: normalizeGrade(p.grade), section: p.section || '', occupation: p.occupation || '',
       contact_number: p.contact_number || '', address: p.address || '',
       relation_to_learner_victim: p.relation_to_learner_victim || ''
     });
@@ -469,28 +476,32 @@
       need('school_id', header.school_id, 'Search for and select a school.');
       need('date_of_intake', header.date_of_intake, 'Set the date of intake.');
       need('nature_of_case', header.nature_of_case, 'Select the nature of the case.');
-      if (header.nature_of_case === 'OTHERS') need('nature_of_case_other', header.nature_of_case_other, 'Specify the nature of the case.');
+      if (needsSpecify(header.nature_of_case)) need('nature_of_case_other', header.nature_of_case_other, header.nature_of_case === 'NON_BULLYING' ? 'Specify what kind of non-bullying incident it is.' : 'Specify the nature of the case.');
     }
     if (step === 2) {
-      need(pf(learner, 'first_name'), learner.first_name, 'Enter the first name.');
-      need(pf(learner, 'last_name'), learner.last_name, 'Enter the last name.');
-      need(pf(learner, 'birthdate'), learner.birthdate, 'Enter the date of birth.');
-      need(pf(learner, 'sex'), learner.sex, 'Select the sex.');
-      need(pf(learner, 'grade'), learner.grade, 'Enter the grade level.');
-      need(pf(learner, 'section'), learner.section, 'Enter the section.');
-      need('adviser_name', adviserName, 'Enter the name of the adviser.');
+      if (learnerIncluded) {
+        need(pf(learner, 'first_name'), learner.first_name, 'Enter the first name.');
+        need(pf(learner, 'last_name'), learner.last_name, 'Enter the last name.');
+      }
+      if (!nonBullying) {
+        need(pf(learner, 'birthdate'), learner.birthdate, 'Enter the date of birth.');
+        need(pf(learner, 'sex'), learner.sex, 'Select the sex.');
+        need(pf(learner, 'grade'), learner.grade, 'Enter the grade level.');
+        need(pf(learner, 'section'), learner.section, 'Enter the section.');
+        need('adviser_name', adviserName, 'Enter the name of the adviser.');
+      }
       const parents = ['MOTHER', 'FATHER', 'GUARDIAN'].filter((r) => optional[r].included);
-      if (!parents.length) errs.parents = ['Enter at least one: mother, father or guardian.'];
+      if (!parents.length && !nonBullying) errs.parents = ['Enter at least one: mother, father or guardian.'];
       for (const r of parents) {
         need(pf(optional[r], 'first_name'), optional[r].first_name, 'Enter the first name.');
         need(pf(optional[r], 'last_name'), optional[r].last_name, 'Enter the last name.');
       }
       const filled = complainants.filter(hasContent);
-      if (!learnerIsComplainant && !linkedParents.length && !filled.length) errs.complainants = ['Enter the complainant, or tick who among the learner-victim and parents / guardian is the complainant.'];
+      if (!nonBullying && !learnerIsComplainant && !linkedParents.length && !filled.length) errs.complainants = ['Enter the complainant, or tick who among the learner-victim and parents / guardian is the complainant.'];
       for (const c of filled) {
         need(pf(c, 'first_name'), c.first_name, 'Enter the first name.');
         need(pf(c, 'last_name'), c.last_name, 'Enter the last name.');
-        need(pf(c, 'relation_to_learner_victim'), c.relation_to_learner_victim, 'Enter the relation to the learner-victim.');
+        if (!nonBullying) need(pf(c, 'relation_to_learner_victim'), c.relation_to_learner_victim, 'Enter the relation to the learner-victim.');
       }
     }
     if (step === 3) {
@@ -500,9 +511,9 @@
         const filled = allegedOffenders.filter(hasContent);
         if (!filled.length) errs.offenders = ['Enter the alleged offender, or tick that they are not yet identified.'];
         for (const o of filled) {
-          need(pf(o, 'offender_type'), o.offender_type, 'Select the type.');
           need(pf(o, 'first_name'), o.first_name, 'Enter the first name.');
           need(pf(o, 'last_name'), o.last_name, 'Enter the last name.');
+          need(pf(o, 'offender_type'), o.offender_type, 'Select the type.');
           if (!o.birthdate && String(o.age ?? '').trim() === '') errs[/** @type {string} */ (pf(o, 'birthdate'))] = ['Enter the birthdate, or the age if unknown.'];
           need(pf(o, 'sex'), o.sex, 'Select the sex.');
           need(pf(o, 'address'), o.address, 'Enter the address.');
@@ -563,7 +574,7 @@
         school_id: Number(header.school_id),
         date_of_intake: header.date_of_intake,
         nature_of_case: header.nature_of_case,
-        nature_of_case_other: header.nature_of_case === 'OTHERS' ? header.nature_of_case_other : null
+        nature_of_case_other: needsSpecify(header.nature_of_case) ? header.nature_of_case_other : null
       };
       const result = sheetId
         ? await intakeSheetsService.updateIntakeSheet(sheetId, payload)
@@ -623,7 +634,7 @@
     }
     const peopleEntered = hasContent(learner) || ['MOTHER', 'FATHER', 'GUARDIAN'].some((r) => optional[r].included)
       || learnerIsComplainant || linkedParents.length > 0 || complainants.some(hasContent) || allegedOffenders.some(hasContent);
-    if ((currentStep === 2 || currentStep === 3) && peopleEntered && !(learner.first_name.trim() && learner.last_name.trim())) {
+    if ((currentStep === 2 || currentStep === 3) && peopleEntered && learnerIncluded && !(learner.first_name.trim() && learner.last_name.trim())) {
       /** @type {Record<string, string[]>} */
       const errs = {};
       if (!learner.first_name.trim()) errs['persons.0.first_name'] = ['Enter the first name to save the people on this draft.'];
@@ -656,11 +667,11 @@
 
   function buildPersons() {
     /** @type {any[]} */
-    const persons = [{ role: 'LEARNER-VICTIM', ...learner }];
+    const persons = learnerIncluded ? [{ role: 'LEARNER-VICTIM', ...learner }] : [];
     for (const role of /** @type {const} */ (['MOTHER', 'FATHER', 'GUARDIAN'])) {
       if (optional[role].included) persons.push({ role, ...stripIncluded(optional[role]) });
     }
-    if (learnerIsComplainant) {
+    if (learnerIsComplainant && learnerIncluded) {
       persons.push({
         ...learner, role: 'COMPLAINANT', same_as_learner_victim: true, same_as: 'LEARNER-VICTIM',
         occupation: selfComplainant.occupation.trim() || null, relation_to_learner_victim: 'Self'
@@ -695,7 +706,7 @@
       school_id: Number(header.school_id),
       date_of_intake: header.date_of_intake,
       nature_of_case: header.nature_of_case,
-      nature_of_case_other: header.nature_of_case === 'OTHERS' ? header.nature_of_case_other : null,
+      nature_of_case_other: needsSpecify(header.nature_of_case) ? header.nature_of_case_other : null,
       ...peoplePayload(),
       detailed_incidents: incidentRows(),
       actions_taken: actions.filter((a) => a.action_taken.trim()),
@@ -753,14 +764,14 @@
   /** @param {any} person @param {string} field */
   function pf(person, field) {
     let idx = 0;
-    if (person === learner) return `persons.0.${field}`;
-    idx = 1;
+    if (person === learner) return learnerIncluded ? `persons.0.${field}` : null;
+    idx = learnerIncluded ? 1 : 0;
     for (const role of /** @type {const} */ (['MOTHER', 'FATHER', 'GUARDIAN'])) {
       if (!optional[role].included) continue;
       if (optional[role] === person) return `persons.${idx}.${field}`;
       idx++;
     }
-    if (learnerIsComplainant) {
+    if (learnerIsComplainant && learnerIncluded) {
       if (person === selfComplainant) return `persons.${idx}.${field}`;
       idx++;
     }
@@ -917,7 +928,7 @@
       </div>
     {:else if opts.showAge}
       <div class="form-control">
-        <label class="label py-1" for="{prefix}-age"><span class="label-text text-xs">Age {person.birthdate ? '(from birthdate)' : '(if no birthdate) *'}</span></label>
+        <label class="label py-1" for="{prefix}-age"><span class="label-text text-xs">Age {person.birthdate ? '(from birthdate)' : `(if no birthdate)${star('age')}`}</span></label>
         {#if person.birthdate}
           <input id="{prefix}-age" type="text" class="input input-bordered input-sm" disabled value={ageFrom(person.birthdate)} />
         {:else}
@@ -944,7 +955,14 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
       <div class="form-control">
         <label class="label py-1" for="{prefix}-grade"><span class="label-text text-xs">Grade Level{star('grade')}</span></label>
-        <input id="{prefix}-grade" data-field={pf(person, 'grade')} type="text" class="input input-bordered input-sm" bind:value={person.grade} />
+        <select id="{prefix}-grade" data-field={pf(person, 'grade')} class="select select-bordered select-sm" bind:value={person.grade}>
+          <option value="">Select grade level…</option>
+          {#each GRADE_GROUPS as g}
+            <optgroup label={g.label}>
+              {#each g.options as o}<option value={o.value}>{o.label}</option>{/each}
+            </optgroup>
+          {/each}
+        </select>
       </div>
       <div class="form-control">
         <label class="label py-1" for="{prefix}-section"><span class="label-text text-xs">Section{star('section')}</span></label>
@@ -983,7 +1001,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0">
         <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
       </svg>
-      <span>Pre-filled from Learner Report #{fromReportId}. Review each step and fill in anything missing — it'll be linked back to the report once you submit.</span>
+      <span>Pre-filled from Learner Report RPT-{String(fromReportId).padStart(5, '0')}. Review each step and fill in anything missing — it'll be linked back to the report once you submit.</span>
     </div>
   {/if}
 
@@ -1115,10 +1133,10 @@
             </select>
           </div>
 
-          {#if header.nature_of_case === 'OTHERS'}
+          {#if needsSpecify(header.nature_of_case)}
             <div class="form-control">
-              <label class="label py-1" for="noc-other"><span class="label-text text-xs">Please Specify *</span></label>
-              <input id="noc-other" data-field="nature_of_case_other" type="text" class="input input-bordered input-sm" bind:value={header.nature_of_case_other} />
+              <label class="label py-1" for="noc-other"><span class="label-text text-xs">{header.nature_of_case === 'NON_BULLYING' ? 'What kind of non-bullying incident? *' : 'Please Specify *'}</span></label>
+              <input id="noc-other" data-field="nature_of_case_other" type="text" maxlength="255" class="input input-bordered input-sm" placeholder={header.nature_of_case === 'NON_BULLYING' ? 'e.g. Fighting, Theft, Vandalism' : ''} bind:value={header.nature_of_case_other} />
             </div>
           {/if}
         </div>
@@ -1131,8 +1149,9 @@
         <p class="text-xs text-base-content/50 mb-4">The learner-victim, their parents or guardian, and anyone who filed the complaint. The respondent comes in the next step.</p>
         <section>
 
-          <p class="text-sm font-medium mb-1">Learner-Victim *</p>
-          {@render personFields(learner, 'lv', { showGradeSection: true, required: ['birthdate', 'sex', 'grade', 'section'] })}
+          <p class="text-sm font-medium mb-1">Learner-Victim{nonBullying ? '' : ' *'}</p>
+          {#if nonBullying}<p class="text-xs text-base-content/50 mb-2">Optional for a Non-bullying case. Leave blank if there is no learner-victim.</p>{/if}
+          {@render personFields(learner, 'lv', { showGradeSection: true, required: nonBullying ? [] : ['birthdate', 'sex', 'grade', 'section'] })}
           {#if matchNotice}
             <div class="alert alert-success alert-soft text-sm mt-3 py-2" role="status">
               <div class="flex items-start justify-between gap-3">
@@ -1147,7 +1166,7 @@
             </p>
           {/if}
           <div class="form-control mt-3">
-            <label class="label py-1" for="lv-adviser"><span class="label-text text-xs">Name of Adviser *</span></label>
+            <label class="label py-1" for="lv-adviser"><span class="label-text text-xs">Name of Adviser{nonBullying ? '' : ' *'}</span></label>
             <input id="lv-adviser" data-field="adviser_name" type="text" class="input input-bordered input-sm" maxlength="255" placeholder="The learner-victim's class adviser" bind:value={adviserName} />
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
@@ -1161,8 +1180,8 @@
             </div>
           </div>
 
-          <p class="text-sm font-medium mt-5">Parents / Guardian *</p>
-          <p class="text-xs text-base-content/50">Include at least one.</p>
+          <p class="text-sm font-medium mt-5">Parents / Guardian{nonBullying ? '' : ' *'}</p>
+          <p class="text-xs text-base-content/50">{nonBullying ? 'Optional for a Non-bullying case.' : 'Include at least one.'}</p>
           {#if fe('parents')}<p class="text-xs text-error mt-1" role="alert">{fe('parents')}</p>{/if}
 
           {#each /** @type {const} */ (['MOTHER', 'FATHER', 'GUARDIAN']) as role}
@@ -1178,10 +1197,11 @@
             {/if}
           {/each}
 
-          <p class="text-sm font-medium mt-5 mb-2 pb-2 border-b border-base-200">Complainant(s) *</p>
+          <p class="text-sm font-medium mt-5 mb-2 pb-2 border-b border-base-200">Complainant(s){nonBullying ? '' : ' *'}</p>
+          {#if nonBullying}<p class="text-xs text-base-content/50 -mt-1 mb-2">Optional for a Non-bullying case.</p>{/if}
           {#if fe('complainants')}<p class="text-xs text-error mb-2" role="alert">{fe('complainants')}</p>{/if}
           <label class="flex items-start gap-2 text-sm cursor-pointer mb-3">
-            <input type="checkbox" class="checkbox checkbox-sm checkbox-primary mt-0.5" bind:checked={learnerIsComplainant} />
+            <input type="checkbox" class="checkbox checkbox-sm checkbox-primary mt-0.5" bind:checked={learnerIsComplainant} disabled={!learnerIncluded} />
             <span>The learner-victim is also the complainant
               <span class="block text-xs text-base-content/50">Their details are taken from the learner-victim above, and the relationship is recorded as Self.</span>
             </span>
@@ -1240,7 +1260,7 @@
           {#each complainants as c, i}
             <div class="border border-base-200 rounded-lg p-3 mb-3 relative">
               <button type="button" class="btn btn-ghost btn-sm text-error absolute top-2 right-2" onclick={() => removeComplainant(i)}>Remove</button>
-              {@render personFields(c, `comp-${i}`, { hideSex: true, ageFromBirthdate: true, showRelation: true, required: ['relation_to_learner_victim'] })}
+              {@render personFields(c, `comp-${i}`, { hideSex: true, ageFromBirthdate: true, showRelation: true, required: nonBullying ? [] : ['relation_to_learner_victim'] })}
             </div>
           {/each}
           <button type="button" class="btn btn-outline btn-sm" onclick={addComplainant}>+ Add Complainant</button>
@@ -1271,7 +1291,7 @@
                 {@render personFields(o, `off-${i}`, {
                   showOffenderType: true, showAge: true, showOccupation: o.offender_type !== 'student', showRelation: true,
                   showGradeSection: o.offender_type === 'student',
-                  required: ['sex', 'address', 'relation_to_learner_victim', 'grade', 'section']
+                  required: ['sex', 'address', 'relation_to_learner_victim', 'grade', 'section', 'age']
                 })}
               </div>
             {/each}
@@ -1381,12 +1401,12 @@
             <p>{selectedSchool?.name || '—'} · {header.date_of_intake}</p>
             <p>
               {NATURE_OF_CASE_OPTIONS.find((o) => o.value === header.nature_of_case)?.label || '—'}
-              {#if header.nature_of_case === 'OTHERS' && header.nature_of_case_other}: {header.nature_of_case_other}{/if}
+              {#if needsSpecify(header.nature_of_case) && header.nature_of_case_other}: {header.nature_of_case_other}{/if}
             </p>
           </div>
           <div>
             <p class="font-medium text-base-content/70">Learner-Victim</p>
-            <p>{learner.first_name} {learner.middle_name} {learner.last_name} {#if learner.grade}· Grade {learner.grade}{learner.section ? ` - ${learner.section}` : ''}{/if}</p>
+            <p>{learner.first_name} {learner.middle_name} {learner.last_name} {#if learner.grade}· {gradeSection(learner.grade, learner.section)}{/if}</p>
             {#if adviserName.trim()}<p class="text-base-content/60">Adviser: {adviserName}</p>{/if}
           </div>
           <div>
@@ -1460,7 +1480,7 @@
           <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs mt-1">
             <dt class="text-base-content/50">Birthdate</dt><dd>{m.birthdate ? `${fmtMatchDate(m.birthdate.slice(0, 10))} (age ${ageFrom(m.birthdate.slice(0, 10))})` : '—'}</dd>
             <dt class="text-base-content/50">Sex</dt><dd>{m.sex ? m.sex.charAt(0) + m.sex.slice(1).toLowerCase() : '—'}</dd>
-            <dt class="text-base-content/50">Grade / Section</dt><dd>{m.grade ? `Grade ${m.grade}${m.section ? ` - ${m.section}` : ''}` : '—'}</dd>
+            <dt class="text-base-content/50">Grade / Section</dt><dd>{gradeSection(m.grade, m.section) || '—'}</dd>
             <dt class="text-base-content/50">School</dt><dd>{m.school_name || '—'}</dd>
             {#if m.parents?.length}
               <dt class="text-base-content/50">Parents / Guardian</dt>

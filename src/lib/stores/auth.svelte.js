@@ -111,7 +111,7 @@ class AuthState {
         { name: 'Learner Reports', path: '/admin/lrp/reports', icon: 'document' },
         // Only a school account files the school's monthly incident report;
         // division/regional accounts monitor every school's compliance instead.
-        { name: 'Monthly Report', path: '/admin/lrp/school-report', icon: 'calendar', schoolOnly: true },
+        { name: 'Zero Incident Report', path: '/admin/lrp/school-report', icon: 'calendar', schoolOnly: true },
         { name: 'Report Compliance', path: '/admin/lrp/compliance', icon: 'clipboard-check', notSchool: true },
         { name: 'Incident Summary', path: '/admin/lrp/incident-summary', icon: 'chart-bar' },
         // FAQ content management is regional-only — not every Focal Person
@@ -251,10 +251,24 @@ class AuthState {
     return this.userRoles[0] || null;
   }
 
-  // Get permissions for current user
+  // Get permissions for current user. An account can hold more than one role
+  // (e.g. a Division LRP Focal Person who is also the Division Admin): it gets
+  // everything each role allows, and the widest scope among them.
   getPermissions() {
-    const primaryRole = this.getPrimaryRole();
-    return this.permissions[primaryRole] || null;
+    const list = this.userRoles.map((/** @type {string} */ r) => /** @type {any} */ (this.permissions)[r]).filter(Boolean);
+    if (!list.length) return null;
+    if (list.length === 1) return list[0];
+    const rank = /** @type {Record<string, number>} */ ({ all: 3, division: 2, self: 1 });
+    return {
+      canAccessAllDashboards: list.some((/** @type {any} */ x) => x.canAccessAllDashboards),
+      canManageUsers: list.some((/** @type {any} */ x) => x.canManageUsers),
+      canManageSchools: list.some((/** @type {any} */ x) => x.canManageSchools),
+      canViewAuditLogs: list.some((/** @type {any} */ x) => x.canViewAuditLogs),
+      canManageSettings: list.some((/** @type {any} */ x) => x.canManageSettings),
+      scope: list.map((/** @type {any} */ x) => x.scope).sort((/** @type {string} */ a, /** @type {string} */ b) => (rank[b] ?? 0) - (rank[a] ?? 0))[0],
+      accessibleDashboards: [...new Set(list.flatMap((/** @type {any} */ x) => x.accessibleDashboards))],
+      menuItems: list.flatMap((/** @type {any} */ x) => x.menuItems)
+    };
   }
 
   // Check if user can access a specific dashboard
@@ -298,6 +312,7 @@ class AuthState {
 
   // Get menu items for current user
   getMenuItems() {
+    /** @type {any[]} */
     const allItems = [];
     const seenRoles = new Set();
     const seenPaths = new Set();
@@ -315,7 +330,11 @@ class AuthState {
           if (item.role) seenRoles.add(item.role);
           if (seenPaths.has(item.path)) continue;
           seenPaths.add(item.path);
-          allItems.push(item);
+          // Two roles on one account: name each dashboard after its role, and
+          // show a page that both roles have (e.g. Report Compliance) only once.
+          const name = this.userRoles.length > 1 && item.role ? this.getRoleDisplayName(item.role) : item.name;
+          if (this.userRoles.length > 1 && !item.role && allItems.some((/** @type {any} */ x) => x.name === name)) continue;
+          allItems.push({ ...item, name });
         }
       }
     }

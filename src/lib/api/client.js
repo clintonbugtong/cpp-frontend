@@ -302,23 +302,48 @@ class ApiClient {
 		setTimeout(() => URL.revokeObjectURL(href), 10000);
 	}
 
+	/**
+	 * Fetch a file with the auth header and return it as a Blob (e.g. to show
+	 * it in the page). Retries once after refreshing an expired token.
+	 * @param {string} endpoint @param {Record<string, any>} params
+	 */
+	async blob(endpoint, params = {}) {
+		const qs = new URLSearchParams(params).toString();
+		const url = `${this.baseURL}${endpoint}${qs ? `?${qs}` : ''}`;
+		const go = () => fetch(url, { headers: { Authorization: `Bearer ${this.accessToken}` } });
+		let response = await go();
+		if (response.status === 401 && (await this.refreshAccessToken())) response = await go();
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			throw new Error(errorData.error || errorData.message || `Could not open the file (HTTP ${response.status})`);
+		}
+		return response.blob();
+	}
+
+	/** @param {string} endpoint @param {FormData} formData */
 	async upload(endpoint, formData) {
 		const url = `${this.baseURL}${endpoint}`;
+		/** @type {Record<string, string>} */
 		const headers = { Accept: 'application/json' };
 		if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
 
 		try {
-			const response = await fetch(url, { method: 'POST', headers, body: formData });
+			let response = await fetch(url, { method: 'POST', headers, body: formData });
+			if (response.status === 401 && (await this.refreshAccessToken())) {
+				headers['Authorization'] = `Bearer ${this.accessToken}`;
+				response = await fetch(url, { method: 'POST', headers, body: formData });
+			}
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
-				const error = new Error(errorData.error || errorData.message || `HTTP Error ${response.status}`);
+				const error = /** @type {any} */ (new Error(errorData.error || errorData.message || `HTTP Error ${response.status}`));
 				error.status = response.status;
 				error.data = errorData;
+				error.validationErrors = errorData.errors;
 				throw error;
 			}
 			return await response.json();
 		} catch (err) {
-			if (err.status) throw err;
+			if (/** @type {any} */ (err).status) throw err;
 			throw new Error('Network error. Please check your connection.');
 		}
 	}

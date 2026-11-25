@@ -5,6 +5,8 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client.js';
   import { schoolReportsService, MONTH_NAMES, phNow } from '$lib/api/school-reports.js';
+  import PrintMenu from '$lib/components/PrintMenu.svelte';
+  import Pagination from '$lib/components/Pagination.svelte';
 
   /** @type {{ canFilterDivision?: boolean }} */
   let { canFilterDivision = false } = $props();
@@ -37,8 +39,16 @@
     load();
   });
 
+  // Intake sheets table: shown a page at a time.
+  const CASES_PER_PAGE = 10;
+  let casePage = $state(1);
+  const pagedCases = $derived((data?.cases ?? []).slice((casePage - 1) * CASES_PER_PAGE, casePage * CASES_PER_PAGE));
+  // Learner reports table: same paging.
+  let reportPage = $state(1);
+  const pagedReports = $derived((data?.open_reports ?? []).slice((reportPage - 1) * CASES_PER_PAGE, reportPage * CASES_PER_PAGE));
+
   async function load() {
-    loading = true; error = '';
+    loading = true; error = ''; casePage = 1; reportPage = 1;
     const res = await schoolReportsService.getIncidentSummary(params);
     loading = false;
     if (res.success) data = res.data; else error = res.error || 'Could not load the summary.';
@@ -56,6 +66,9 @@
   const STATUS = /** @type {Record<string, string>} */ ({ draft: 'Draft', not_forwarded: 'Not yet forwarded', for_review: 'For review', under_review: 'Under review', returned: 'Returned', recommended_resolved: 'Recommended as resolved', resolved: 'Resolved', new: 'New', linked: 'Linked' });
   /** @param {string} d */
   const fmtDate = (d) => d ? new Date(d.length === 10 ? d + 'T00:00:00' : d).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+  const summaryPrintItems = $derived([{ title: 'Incident Summary Report', description: `${data?.period?.label ?? ''} · no names, for sharing between offices`,
+    icon: /** @type {const} */ ('chart'), tone: /** @type {const} */ ('primary'), run: downloadPdf }]);
 </script>
 
 <div class="space-y-5">
@@ -64,12 +77,7 @@
       <h1 class="text-2xl font-bold">Incident Summary</h1>
       <p class="text-sm text-base-content/60 mt-1">{data?.scope_label ?? ''} — intake sheets and learner reports for the period.</p>
     </div>
-    <button class="btn btn-primary btn-sm" disabled={downloading || !data} onclick={downloadPdf}>
-      {#if downloading}<span class="loading loading-spinner loading-xs"></span>{:else}
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-      {/if}
-      Download PDF
-    </button>
+    <PrintMenu disabled={!data} items={summaryPrintItems} />
   </div>
 
   <div class="flex flex-wrap items-center gap-2">
@@ -169,8 +177,12 @@
             {:else}
               <p class="text-sm text-base-content/50 py-4">No incidents recorded for this period.</p>
             {/if}
-            <div class="flex gap-4 text-xs text-base-content/60 border-t border-base-200 pt-2 mt-1">
-              <span>Learner-victims: <strong>{s.victims_female}</strong> female · <strong>{s.victims_male}</strong> male{#if s.victims_unknown} · {s.victims_unknown} not recorded{/if}</span>
+            <div class="flex flex-col gap-1 text-xs text-base-content/60 border-t border-base-200 pt-2 mt-1">
+              <span>Learner-victims: <strong>{s.victims_female}</strong> female · <strong>{s.victims_male}</strong> male{#if s.victims_unknown} · {s.victims_unknown} not recorded{/if}{#if s.victims_none} · {s.victims_none} case{s.victims_none === 1 ? '' : 's'} with none{/if}</span>
+              {#if data.people}
+                {@const r = data.people.respondents}
+                <span>Respondents: <strong>{r.female}</strong> female · <strong>{r.male}</strong> male{#if r.not_recorded} · {r.not_recorded} not recorded{/if} — {r.school_personnel} school personnel · {r.student} student · {r.other} other{#if r.unidentified_cases} · {r.unidentified_cases} not yet identified{/if}</span>
+              {/if}
             </div>
           </div>
         </div>
@@ -184,9 +196,9 @@
               <table class="table table-sm">
                 <thead><tr><th>Case no.</th><th>Date</th><th>School</th><th>Nature</th><th>Status</th><th class="text-center" title="Initial actions taken">Act.</th><th class="text-center" title="Referral: Yes / No">Referred</th></tr></thead>
                 <tbody>
-                  {#each data.cases as c}
+                  {#each pagedCases as c}
                     <tr class="hover">
-                      <td><a class="link link-primary font-mono text-xs" href="/admin/lrp/intake-sheets/{c.intake_sheet_id}">{c.case_no}</a></td>
+                      <td><a class="badge badge-sm badge-primary font-mono whitespace-nowrap hover:opacity-80" href="/admin/lrp/intake-sheets/{c.intake_sheet_id}">{c.case_no}</a></td>
                       <td class="whitespace-nowrap">{fmtDate(c.date_of_intake)}</td>
                       <td class="min-w-40">{c.school ?? '—'}</td>
                       <td>{c.nature}</td>
@@ -198,6 +210,7 @@
                 </tbody>
               </table>
             </div>
+            <Pagination bind:page={casePage} total={data.cases.length} perPage={CASES_PER_PAGE} noun="intake sheets" bare />
           {:else}
             <p class="text-sm text-base-content/50">No intake sheets for this period.</p>
           {/if}
@@ -212,9 +225,9 @@
               <table class="table table-sm">
                 <thead><tr><th>Ref. no.</th><th>Submitted</th><th>School</th><th>Concern</th><th>Status</th></tr></thead>
                 <tbody>
-                  {#each data.open_reports as r}
+                  {#each pagedReports as r}
                     <tr class="hover">
-                      <td><a class="link link-accent font-mono text-xs" href="/admin/lrp/reports/{r.learner_report_id}">{r.ref_no}</a></td>
+                      <td><a class="badge badge-sm badge-accent badge-outline font-mono whitespace-nowrap hover:opacity-80" href="/admin/lrp/reports/{r.learner_report_id}">{r.ref_no}</a></td>
                       <td class="whitespace-nowrap">{fmtDate(r.submitted_at)}</td>
                       <td class="min-w-40">{r.school ?? '—'}</td>
                       <td>{r.nature}</td>
@@ -224,6 +237,7 @@
                 </tbody>
               </table>
             </div>
+            <Pagination bind:page={reportPage} total={data.open_reports.length} perPage={CASES_PER_PAGE} noun="learner reports" bare />
           </div>
         </div>
       {/if}

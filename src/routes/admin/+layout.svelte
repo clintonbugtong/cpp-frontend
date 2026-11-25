@@ -8,6 +8,22 @@
   let { children } = $props();
   let sidebarOpen = $state(false);
   let currentRole = $state('Dashboard');
+  /** Where this account works, for the sidebar: "School · <name>", "Division Office · <name>"… */
+  const accessLabel = $derived.by(() => {
+    const u = authState.user;
+    if (authState.hasRole('Super Admin')) return { title: 'Super Admin', detail: 'All divisions and schools' };
+    if (authState.hasRole('Learner Right Protection Focal Person')) {
+      const level = u?.organizationLevel;
+      if (level === 'school') return { title: 'School LRP Focal Person', detail: u?.school?.name ?? '' };
+      if (level === 'division') return {
+        // Some Division LRP Focal Persons are also the Division Admin.
+        title: authState.hasRole('Division Admin') ? 'Division LRP Focal Person · Division Admin' : 'Division LRP Focal Person',
+        detail: u?.division?.name ? `${u.division.name} Division` : ''
+      };
+      return { title: 'Regional LRP Focal Person', detail: 'DepEd CAR Regional Office' };
+    }
+    return { title: 'Division Administrator', detail: u?.division?.name ? `${u.division.name} Division` : '' };
+  });
   let userMenuOpen = $state(false);
 
   // ── Forced password change (6-month expiry policy) ───────────────────────
@@ -86,7 +102,7 @@
     '/admin/lrp/intake-sheets/new': 'New Intake Sheet / Incident Report',
     '/admin/lrp/reports': 'Learner Reports',
     '/admin/lrp/faqs': 'Manage FAQs',
-    '/admin/lrp/school-report': 'Monthly Report',
+    '/admin/lrp/school-report': 'Zero Incident Report',
     '/admin/lrp/compliance': 'Report Compliance',
     '/admin/lrp/incident-summary': 'Incident Summary',
     '/admin/lis/compliance': 'Report Compliance',
@@ -301,16 +317,23 @@
       <label for="admin-drawer" class="drawer-overlay"></label>
       <aside class="bg-base-100 w-64 min-h-full border-r border-base-200 flex flex-col">
         
-        <div class="flex items-center gap-3 px-5 py-4 border-b border-base-200">
-          <div class="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span class="text-primary font-bold text-sm">LS</span>
+        <!-- Brand + where this account works -->
+        <div class="px-4 pt-4 pb-3 border-b border-base-200">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/15 to-secondary/10 ring-1 ring-primary/15 grid place-items-center shrink-0">
+              <img src="/favicon.svg" alt="" class="w-7 h-7" />
+            </div>
+            <div class="min-w-0" title="Learner Rights Protection – Incident Reporting Information System">
+              <h2 class="font-bold text-[15px] leading-tight tracking-tight">LRP-<span class="text-primary">IRIS</span></h2>
+              <p class="text-[10.5px] leading-tight text-base-content/55">Incident Reporting Information System</p>
+            </div>
           </div>
-          <div>
-            <h2 class="font-semibold text-sm">LSIS</h2>
-            <p class="text-xs text-base-content/40">
-              {authState.getScope() === 'all' ? 'Full Access' : 
-               authState.getScope() === 'division' ? 'Division Access' : 'Standard Access'}
-            </p>
+          <div class="mt-3 flex items-center gap-2 rounded-lg bg-base-200/60 px-2.5 py-1.5" title={accessLabel.detail || accessLabel.title}>
+            <span class="w-1.5 h-1.5 rounded-full bg-success shrink-0"></span>
+            <div class="min-w-0 leading-tight">
+              <p class="text-[11px] font-semibold text-base-content/80">{accessLabel.title}</p>
+              {#if accessLabel.detail}<p class="text-[11px] text-base-content/55 truncate">{accessLabel.detail}</p>{/if}
+            </div>
           </div>
         </div>
 

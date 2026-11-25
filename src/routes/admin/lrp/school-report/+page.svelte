@@ -5,6 +5,8 @@
   import { authState } from '$lib/stores/auth.svelte.js';
   import { schoolReportsService, reportStatus } from '$lib/api/school-reports.js';
   import SchoolAccountsPanel from '$lib/components/SchoolAccountsPanel.svelte';
+  import PeriodPicker from '$lib/components/PeriodPicker.svelte';
+  import { phNow } from '$lib/api/school-reports.js';
 
   /** @type {any} */
   let data = $state(null);
@@ -22,24 +24,42 @@
   /** @type {Record<string, string[]>} */
   let fileErrors = $state({});
 
-  onMount(() => {
+  onMount(async () => {
     if (!authState.isSchoolAccount()) { goto('/admin/lrp/dashboard'); return; }
-    load();
+    await load();
+    // From the dashboard: open the form for this month, or the month picker.
+    const want = new URLSearchParams(location.search).get('file');
+    if (want === 'current' && currentMonth && currentMonth.status !== 'with_incidents') openFile(currentMonth);
+    else if (want === 'pick') openPicker();
+  });
+
+  // Report history period (like the Incident Summary): last 12 months by default.
+  const nowPH = phNow();
+  let periodType = $state('all');
+  let periodYear = $state(nowPH.year);
+  let periodMonth = $state(nowPH.month);
+  let periodQuarter = $state(nowPH.quarter);
+  const periodParams = $derived(periodType === 'all' ? {} : {
+    period_type: periodType, year: periodYear,
+    ...(periodType === 'monthly' ? { month: periodMonth } : {}),
+    ...(periodType === 'quarterly' ? { quarter: periodQuarter } : {})
   });
 
   async function load() {
     loading = true;
-    const res = await schoolReportsService.getMine();
+    const res = await schoolReportsService.getMine(periodParams);
     loading = false;
     if (res.success) { data = res.data; loadError = ''; }
     else loadError = res.error || 'Could not load your reports.';
   }
 
   const months = $derived(/** @type {any[]} */ (data?.months ?? []));
-  const currentMonth = $derived(months.find((m) => m.is_current) ?? null);
+  // The current month and the overdue list always cover the last 12 months,
+  // whatever period the history shows.
+  const currentMonth = $derived(data?.current ?? months.find((m) => m.is_current) ?? null);
   // Months with recorded incidents count as reported automatically, so only
   // past months with nothing recorded and no zero report are outstanding.
-  const overdue = $derived(months.filter((m) => !m.is_current && m.status === 'no_report'));
+  const overdue = $derived(/** @type {any[]} */ (data?.overdue ?? months.filter((m) => !m.is_current && m.status === 'no_report')));
 
   // Days left in the current month, Philippine time.
   const daysLeft = $derived.by(() => {
@@ -47,6 +67,34 @@
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     return end.getDate() - now.getDate();
   });
+
+  // ── "File zero incident report" for any month: pick the month first ──
+  /** @type {HTMLDialogElement|null} */
+  let pickDialog = $state(null);
+  let pickYear = $state(nowPH.year);
+  let pickMonth = $state(nowPH.month);
+  /** @type {any} the picked month's status */
+  let picked = $state(null);
+  let pickLoading = $state(false);
+  const pickYears = Array.from({ length: nowPH.year - 2019 }, (_, i) => nowPH.year - i);
+  function openPicker() {
+    pickYear = nowPH.year; pickMonth = nowPH.month;
+    pickDialog?.showModal();
+    loadPicked();
+  }
+  async function loadPicked() {
+    picked = null;
+    if (pickYear === nowPH.year && pickMonth > nowPH.month) return;
+    pickLoading = true;
+    const res = await schoolReportsService.getMine({ period_type: 'monthly', year: pickYear, month: pickMonth });
+    pickLoading = false;
+    picked = res.success ? (res.data?.months?.[0] ?? null) : null;
+  }
+  function continueToForm() {
+    if (!picked || picked.status === 'with_incidents') return;
+    pickDialog?.close();
+    openFile(picked);
+  }
 
   /** @param {any} m */
   function openFile(m) {
@@ -89,10 +137,25 @@
 
 <div class="space-y-6">
   <div>
-    <h1 class="text-2xl font-bold">Monthly Incident Report</h1>
+    <h1 class="text-2xl font-bold">Zero Incident Report</h1>
     <p class="text-base-content/60 mt-1 text-sm">
-      {data?.school?.name ?? authState.getOrgLabel()} — every month needs a report. Months with recorded incidents are counted automatically; if nothing happened, file a zero incident report.
+      {data?.school?.name ?? authState.getOrgLabel()} — every month needs a report. Months with recorded incidents are counted automatically; if nothing happened, report zero incident.
     </p>
+  </div>
+
+  <!-- The main action: report a month with no incident -->
+  <div class="rounded-2xl border border-success/30 bg-gradient-to-r from-success/10 to-success/5 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+    <span class="grid place-items-center w-12 h-12 rounded-2xl bg-success text-success-content shrink-0 shadow-sm">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-7 h-7" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+    </span>
+    <div class="min-w-0 flex-1">
+      <p class="font-semibold">No incident happened in a month?</p>
+      <p class="text-sm text-base-content/70">Report zero incident for this month or any past month that has nothing recorded.</p>
+    </div>
+    <button class="btn btn-success btn-md gap-2 shadow-sm sm:ml-auto" onclick={openPicker}>
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+      Report Zero Incident
+    </button>
   </div>
 
   {#if notice}
@@ -127,8 +190,8 @@
               {/if}
             </div>
             {#if currentMonth.status !== 'with_incidents'}
-              <button class="btn btn-primary btn-sm" onclick={() => openFile(currentMonth)}>
-                {currentMonth.report ? 'Update zero report' : 'File zero incident report'}
+              <button class="btn btn-success btn-sm" onclick={() => openFile(currentMonth)}>
+                {currentMonth.report ? 'Update zero incident report' : 'Report zero incident'}
               </button>
             {/if}
           </div>
@@ -158,7 +221,7 @@
     {#if overdue.length}
       <div class="rounded-lg border border-error/30 bg-error/10 p-4">
         <p class="font-semibold text-sm">{overdue.length} past month{overdue.length === 1 ? '' : 's'} with no report</p>
-        <p class="text-xs text-base-content/70">No incidents were recorded and no zero incident report was filed, so the division and regional offices see "No report". File them now:</p>
+        <p class="text-xs text-base-content/70">No incidents were recorded and no zero incident report was filed, so the division and regional offices see "No report". Report zero incident for:</p>
         <div class="flex flex-wrap gap-2 mt-2">
           {#each overdue as m}
             <button class="btn btn-xs btn-outline btn-error" onclick={() => openFile(m)}>{m.period_label}</button>
@@ -171,7 +234,12 @@
       <!-- History -->
       <div class="lg:col-span-3 card bg-base-100 border border-base-200 shadow-sm">
         <div class="card-body p-4 sm:p-5">
-          <h3 class="font-semibold">Report history</h3>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="font-semibold">Report history <span class="text-xs font-normal text-base-content/50">· {data.period?.label ?? 'Last 12 months'}</span></h3>
+            <PeriodPicker bind:type={periodType} bind:year={periodYear} bind:month={periodMonth} bind:quarter={periodQuarter}
+              labels={{ all: 'Last 12 months' }} onchange={load} />
+          </div>
+          {#if !months.length}<p class="text-sm text-base-content/50 py-4">No months to show for this period.</p>{/if}
           <ul class="divide-y divide-base-200 -mx-1">
             {#each months as m}
               {@const st = reportStatus(m.status)}
@@ -195,7 +263,7 @@
                     <span class="badge badge-sm {st.badge}">{m.status === 'with_incidents' ? incLabel(m.incident_count) : st.label}</span>
                   {/if}
                   {#if m.status !== 'with_incidents'}
-                    <button class="btn btn-ghost btn-xs" onclick={() => openFile(m)}>{m.report ? 'Update' : 'File'}</button>
+                    <button class="btn btn-xs {m.report ? 'btn-ghost border border-base-300' : 'btn-success btn-outline'}" onclick={() => openFile(m)}>{m.report ? 'Update report' : 'Report zero incident'}</button>
                   {/if}
                 </div>
               </li>
@@ -214,6 +282,61 @@
     </div>
   {/if}
 </div>
+
+<!-- Pick the month to file a zero incident report for -->
+<dialog bind:this={pickDialog} class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box max-w-md">
+    <h3 class="font-bold text-lg">Report zero incident</h3>
+    <p class="text-sm text-base-content/70 mt-1">Choose the month. Past months can still be reported.</p>
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <label class="form-control">
+        <span class="label-text text-xs mb-1">Year</span>
+        <select class="select select-bordered select-sm" bind:value={pickYear} onchange={loadPicked}>
+          {#each pickYears as y}<option value={y}>{y}</option>{/each}
+        </select>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs mb-1">Month</span>
+        <select class="select select-bordered select-sm" bind:value={pickMonth} onchange={loadPicked}>
+          {#each ['January','February','March','April','May','June','July','August','September','October','November','December'] as name, i}
+            <option value={i + 1} disabled={pickYear === nowPH.year && i + 1 > nowPH.month}>{name}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
+    <div class="mt-4 min-h-14">
+      {#if pickLoading}
+        <span class="loading loading-spinner loading-sm"></span>
+      {:else if pickYear === nowPH.year && pickMonth > nowPH.month}
+        <p class="text-sm text-base-content/70">That month hasn't started yet.</p>
+      {:else if picked}
+        {#if picked.status === 'with_incidents'}
+          <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+            <p class="font-semibold">{picked.period_label}: {incLabel(picked.incident_count)} recorded</p>
+            <p class="text-xs text-base-content/70 mt-0.5">This month is already counted as reported, so no zero incident report is needed.</p>
+          </div>
+        {:else if picked.status === 'zero_incident'}
+          <div class="rounded-lg border border-success/30 bg-success/10 p-3 text-sm">
+            <p class="font-semibold">{picked.period_label}: zero incident report already filed</p>
+            <p class="text-xs text-base-content/70 mt-0.5">Filed {fmtDateTime(picked.report.submitted_at)} · {filer(picked.report)}. You can update it.</p>
+          </div>
+        {:else}
+          <div class="rounded-lg border border-base-300 bg-base-200/50 p-3 text-sm">
+            <p class="font-semibold">{picked.period_label}: not yet reported</p>
+            <p class="text-xs text-base-content/70 mt-0.5">Nothing is recorded for this month. Continue to confirm that no incident happened.</p>
+          </div>
+        {/if}
+      {/if}
+    </div>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" onclick={() => pickDialog?.close()}>Cancel</button>
+      <button class="btn btn-primary btn-sm" disabled={!picked || pickLoading || picked.status === 'with_incidents'} onclick={continueToForm}>
+        {picked?.status === 'zero_incident' ? 'Update report' : 'Continue'}
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 <dialog bind:this={fileDialog} class="modal modal-bottom sm:modal-middle">
   <div class="modal-box max-w-lg" use:fieldErrors={{ errors: fileErrors }}>

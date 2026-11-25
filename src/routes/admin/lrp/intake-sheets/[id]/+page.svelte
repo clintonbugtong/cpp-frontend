@@ -1,11 +1,13 @@
 <script>
+  import { gradeLabel, gradeSection } from '$lib/constants/grade-levels.js';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
+  import PrintMenu from '$lib/components/PrintMenu.svelte';
   import { intakeSheetsService } from '$lib/api/intake-sheets.js';
   import { schoolReportsService } from '$lib/api/school-reports.js';
   import { authState } from '$lib/stores/auth.svelte.js';
-  import { natureOfCaseLabel, statusLabel, levelLabel } from '$lib/constants/intake-sheets.js';
+  import { natureOfCaseLabel, statusLabel, levelLabel, needsSpecify } from '$lib/constants/intake-sheets.js';
   import { natureOfConcernLabel } from '$lib/constants/learner-reports.js';
   import { fieldErrors } from '$lib/actions/field-errors.js';
 
@@ -32,11 +34,91 @@
     const result = await intakeSheetsService.getIntakeSheet(id);
     if (result.success) {
       sheet = result.data;
+      loadAttachments();
     } else {
       error = result.error || 'Failed to load intake sheet';
     }
     loading = false;
   }
+
+  // ── Intervention Plan: each upload is a new version; earlier ones are kept ──
+  /** @type {any} */
+  let files = $state(null);
+  let fileError = $state('');
+  async function loadAttachments() {
+    const res = await intakeSheetsService.getAttachments(id ?? '');
+    if (res.success) files = res.data; else fileError = res.error || 'Could not load the files.';
+  }
+  /** @type {string|null} kind being uploaded */
+  let uploadKind = $state(null);
+  /** @type {File|null} */
+  let uploadFile = $state(null);
+  let uploadNotes = $state('');
+  let uploading = $state(false);
+  /** @type {Record<string, string[]>} */
+  let uploadErrors = $state({});
+  /** @type {HTMLInputElement|null} */
+  let fileInput = $state(null);
+  /** @param {string} kind */
+  function startUpload(kind) {
+    uploadKind = kind; uploadFile = null; uploadNotes = ''; uploadErrors = {}; fileError = '';
+  }
+  /** @param {Event} e */
+  function pickFile(e) {
+    const f = /** @type {HTMLInputElement} */ (e.currentTarget).files?.[0] ?? null;
+    uploadErrors = {};
+    if (f && files && f.size > files.max_kb * 1024) { uploadErrors = { file: ['The file must be 10 MB or smaller.'] }; uploadFile = null; return; }
+    uploadFile = f;
+  }
+  async function submitUpload() {
+    if (!uploadFile) { uploadErrors = { file: ['Choose the file to upload.'] }; return; }
+    uploading = true; uploadErrors = {};
+    const res = await intakeSheetsService.uploadAttachment(id ?? '', /** @type {string} */ (uploadKind), uploadFile, uploadNotes);
+    uploading = false;
+    if (res.success) {
+      files = res.data; uploadKind = null;
+      // The upload is noted in the edit history.
+      const fresh = await intakeSheetsService.getIntakeSheet(id ?? '');
+      if (fresh.success) sheet = fresh.data;
+    } else {
+      uploadErrors = res.validationErrors || { file: [res.error || 'Could not upload the file.'] };
+    }
+  }
+  /** @param {any} v */
+  async function downloadVersion(v) {
+    fileError = '';
+    const res = await intakeSheetsService.downloadAttachment(id ?? '', v.attachment_id, v.name);
+    if (!res.success) fileError = res.error || 'Could not download the file.';
+  }
+  // ── View a file in the page (PDF and images) ──
+  /** @type {HTMLDialogElement|null} */
+  let viewerDialog = $state(null);
+  /** @type {any} */
+  let viewing = $state(null);
+  let viewUrl = $state('');
+  let viewLoading = $state(false);
+  let viewError = $state('');
+  /** @param {any} v */
+  async function viewVersion(v) {
+    closeViewer();
+    viewing = v; viewError = ''; viewLoading = true;
+    viewerDialog?.showModal();
+    const res = await intakeSheetsService.viewAttachment(id ?? '', v.attachment_id);
+    viewLoading = false;
+    if (res.success && viewing === v) {
+      // Keep the file's own type so the browser shows a PDF as a PDF.
+      viewUrl = URL.createObjectURL(new Blob([/** @type {Blob} */ (res.data)], { type: v.mime_type }));
+    } else if (!res.success) {
+      viewError = res.error || 'Could not open the file.';
+    }
+  }
+  function closeViewer() {
+    if (viewUrl) URL.revokeObjectURL(viewUrl);
+    viewUrl = ''; viewing = null; viewError = '';
+  }
+
+  /** @param {number} bytes */
+  const fmtSize = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
   async function handleDelete() {
     deleting = true;
@@ -149,6 +231,24 @@
   const canEditAll = $derived(!!sheet?.permissions?.can_edit_all);
   const canEditSections = $derived(!!sheet?.permissions?.can_edit_sections);
 
+  // ── Edit history: loaded only when someone asks to see it ──
+  let historyOpen = $state(false);
+  let historyLoading = $state(false);
+  let historyError = $state('');
+  /** @type {any[]|null} */
+  let revisions = $state(null);
+  async function toggleHistory() {
+    historyOpen = !historyOpen;
+    if (!historyOpen || revisions) return;
+    historyLoading = true; historyError = '';
+    const res = await intakeSheetsService.getHistory(id ?? "");
+    historyLoading = false;
+    if (res.success) revisions = res.data?.revisions ?? [];
+    else historyError = res.error || 'Could not load the edit history.';
+  }
+  // A new save makes the loaded history stale.
+  $effect(() => { void sheet?.history_count; revisions = null; historyOpen = false; });
+
   /** "Added Nov 14, 2026 by X · updated by Y" for a section entry. @param {any} row */
   function editedBy(row) {
     let text = `Added ${fmtDateTime(row.created_at)}${row.created_by ? ` by ${row.created_by.full_name}` : ''}`;
@@ -212,7 +312,7 @@
   /** @param {any} p */
   const personDetails = (p) => [
     OFFENDER_TYPE_LABELS[p.offender_type],
-    p.role === 'ALLEGED-OFFENDER' && p.offender_type === 'student' && p.grade ? `Grade ${p.grade}${p.section ? ` - ${p.section}` : ''}` : '',
+    p.role === 'ALLEGED-OFFENDER' && p.offender_type === 'student' && p.grade ? gradeSection(p.grade, p.section) : '',
     p.role === 'ALLEGED-OFFENDER' && !p.birthdate && p.age != null ? `Age ${p.age}` : '',
     p.relation_to_learner_victim || (p.role === 'COMPLAINANT' ? '' : p.occupation) || ''
   ].filter(Boolean).join(' · ');
@@ -366,41 +466,26 @@
     if (!res.success) error = res.error || 'Could not generate the incident report.';
   }
 
-  // Print menu: one button, either form.
-  let printOpen = $state(false);
-  /** @type {HTMLDivElement|null} */
-  let printMenuRoot = $state(null);
-  const printBusy = $derived(pdfBusy || incidentPdfBusy);
-  const printItems = () => /** @type {HTMLElement[]} */ ([...(printMenuRoot?.querySelectorAll('[role="menuitem"]') ?? [])]);
-
-  async function openPrintMenu() {
-    printOpen = true;
-    await tick();
-    printItems()[0]?.focus();
-  }
-  function closePrintMenu(refocus = true) {
-    printOpen = false;
-    if (refocus) printMenuRoot?.querySelector('button')?.focus();
-  }
-  /** @param {() => Promise<void>} download */
-  function printForm(download) {
-    closePrintMenu();
-    error = '';
-    download();
-  }
-  /** @param {KeyboardEvent} e */
-  function onPrintMenuKey(e) {
-    const items = printItems();
-    const at = items.indexOf(/** @type {HTMLElement} */ (document.activeElement));
-    if (e.key === 'Escape') { e.preventDefault(); closePrintMenu(); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(at + 1) % items.length]?.focus(); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(at - 1 + items.length) % items.length]?.focus(); }
-    else if (e.key === 'Tab') closePrintMenu(false);
-  }
-  /** Click anywhere else closes it. @param {MouseEvent} e */
-  function onWindowClick(e) {
-    if (printOpen && !printMenuRoot?.contains(/** @type {Node} */ (e.target))) closePrintMenu(false);
-  }
+  // Colour of the Nature of Case highlight: abuse and harassment red, bullying
+  // orange, discrimination / neglect amber, others neutral-blue.
+  // Full class names (not built from parts) so Tailwind keeps them.
+  const NATURE_TONE = /** @type {Record<string, {box: string, icon: string}>} */ ({
+    red: { box: 'border-error/30 bg-error/10 text-error', icon: 'bg-error/15 text-error' },
+    orange: { box: 'border-warning/50 bg-warning/15 text-base-content', icon: 'bg-warning text-warning-content' },
+    blue: { box: 'border-info/30 bg-info/10 text-base-content', icon: 'bg-info text-info-content' }
+  });
+  const natureTone = $derived(NATURE_TONE[
+    ['CHILD_ABUSE', 'PHYSICAL_ABUSE', 'SEXUAL_ABUSE_HARASSMENT'].includes(sheet?.nature_of_case) ? 'red'
+      : ['BULLYING', 'NON_BULLYING', 'DISCRIMINATION', 'NEGLECT'].includes(sheet?.nature_of_case) ? 'orange' : 'blue'
+  ]);
+  const enhanced = $derived(sheet?.enhanced_intake_sheet ?? { available: true, reason: null });
+  // Print menu items (shared PrintMenu component).
+  const printMenuItems = $derived([
+    { title: 'Enhanced Intake Sheet', description: 'Annex E · strictly confidential, with full names', icon: /** @type {const} */ ('document'),
+      tone: /** @type {const} */ ('primary'), available: enhanced.available, reason: enhanced.reason, run: () => { error = ''; return downloadPdf(); } },
+    { title: 'Incident Report', description: 'LRP Concern form · names of minors withheld', icon: /** @type {const} */ ('clipboard'),
+      tone: /** @type {const} */ ('secondary'), run: () => { error = ''; return downloadIncidentReportPdf(); } }
+  ]);
 
   // ── V. Referral: YES / NO — one answer per intake sheet ──
   /** @type {HTMLDialogElement|null} */
@@ -443,7 +528,6 @@
   // Small icon set reused by every Add/Edit/Delete button below.
 </script>
 
-<svelte:window onclick={onWindowClick} />
 
 {#snippet plusIcon()}
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3 h-3">
@@ -478,10 +562,18 @@
       <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
       <div class="min-w-0 lg:flex-1">
         <p class="text-[11px] font-medium uppercase tracking-wider text-base-content/50">Intake Sheet / Incident Report</p>
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <h1 class="text-xl sm:text-2xl font-bold tracking-tight whitespace-nowrap">LRP-{String(sheet.intake_sheet_id).padStart(5, '0')}</h1>
-          <span class="badge badge-sm badge-primary badge-soft h-auto py-0.5 whitespace-normal text-left">
-            {natureOfCaseLabel(sheet.nature_of_case)}{#if sheet.nature_of_case === 'OTHERS' && sheet.nature_of_case_other}: {sheet.nature_of_case_other}{/if}
+        <h1 class="text-xl sm:text-2xl font-bold tracking-tight whitespace-nowrap">LRP-{String(sheet.intake_sheet_id).padStart(5, '0')}</h1>
+        <!-- Nature of case: the headline of the record -->
+        <div class="mt-2 inline-flex max-w-full items-start gap-2.5 rounded-xl border px-3 py-2 {natureTone.box}">
+          <span class="grid place-items-center w-8 h-8 shrink-0 rounded-lg {natureTone.icon}">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-[18px] h-[18px]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+          </span>
+          <span class="min-w-0">
+            <span class="block text-[10px] font-semibold uppercase tracking-wider opacity-70">Nature of Case</span>
+            <span class="block text-base sm:text-lg font-bold leading-tight break-words">{natureOfCaseLabel(sheet.nature_of_case)}</span>
+            {#if needsSpecify(sheet.nature_of_case) && sheet.nature_of_case_other}
+              <span class="block text-sm font-medium leading-snug break-words opacity-90">{sheet.nature_of_case_other}</span>
+            {/if}
           </span>
         </div>
         <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs sm:text-sm text-base-content/70">
@@ -501,34 +593,7 @@
       </div>
       <div class="flex flex-wrap items-center gap-2 lg:justify-end lg:max-w-[50%]">
         <!-- One Print button: the same record generates either form -->
-        <div class="relative" bind:this={printMenuRoot}>
-          <button
-            class="btn btn-outline btn-sm gap-1.5" disabled={printBusy} aria-haspopup="menu" aria-expanded={printOpen}
-            onclick={() => (printOpen ? closePrintMenu() : openPrintMenu())}
-          >
-            {#if printBusy}<span class="loading loading-spinner loading-xs"></span> Generating…{:else}
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
-              Print
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5 transition-transform {printOpen ? 'rotate-180' : ''}"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-            {/if}
-          </button>
-          {#if printOpen}
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div
-              role="menu" tabindex="-1" aria-label="Choose a form to print" onkeydown={onPrintMenuKey}
-              class="z-30 mt-1 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg max-sm:fixed max-sm:inset-x-4 sm:absolute sm:right-0 sm:w-72"
-            >
-              <button role="menuitem" class="w-full rounded-lg px-3 py-2 text-left hover:bg-base-200 focus:bg-base-200 focus:outline-none" onclick={() => printForm(downloadPdf)}>
-                <span class="block text-sm font-medium">Enhanced Intake Sheet</span>
-                <span class="block text-xs text-base-content/60">Annex E · strictly confidential, with full names</span>
-              </button>
-              <button role="menuitem" class="w-full rounded-lg px-3 py-2 text-left hover:bg-base-200 focus:bg-base-200 focus:outline-none" onclick={() => printForm(downloadIncidentReportPdf)}>
-                <span class="block text-sm font-medium">Incident Report</span>
-                <span class="block text-xs text-base-content/60">LRP Concern form · names of minors withheld</span>
-              </button>
-            </div>
-          {/if}
-        </div>
+        <PrintMenu items={printMenuItems} />
         {#if canEditAll}
           <button class="btn btn-outline btn-sm gap-1.5" onclick={() => goto(`/admin/lrp/intake-sheets/${id}/edit`)}>
             {@render pencilIcon()}
@@ -590,7 +655,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5"/>
           </svg>
           <span>
-            Created from Learner Report #{report.learner_report_id} —
+            Created from Learner Report RPT-{String(report.learner_report_id).padStart(5, '0')} —
             {report.is_anonymous ? 'Anonymous' : report.reporter_full_name} ·
             {natureOfConcernLabel(report.nature_of_concern)}. Tap to view the original report.
           </span>
@@ -600,7 +665,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0 text-accent">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5"/>
           </svg>
-          <span>Created from Learner Report #{report.learner_report_id}.</span>
+          <span>Created from Learner Report RPT-{String(report.learner_report_id).padStart(5, '0')}.</span>
         </div>
       {/if}
     {/if}
@@ -653,7 +718,7 @@
       {:else if actions.review}
         <p class="text-xs text-warning mt-3">Click <strong>Review</strong> to start working on this intake sheet — updating is enabled once you have reviewed it.</p>
       {:else if !canEditAll && canEditSections}
-        <p class="text-xs text-base-content/60 mt-3">You can add and update Incident Details, Initial Actions Taken and Recommendations / Next Steps (including the Referral). The case details and people involved can only be changed by the school.</p>
+        <p class="text-xs text-base-content/60 mt-3">You can add and update Initial Actions Taken and Recommendations / Next Steps (including the Referral). The case details, people involved and Incident Details can only be changed by the {levelLabel(sheet.origin_level || 'school')}, where it was created.</p>
       {/if}
 
       <!-- Who: preparer, last editor, and only the offices that have reviewed so far -->
@@ -708,7 +773,7 @@
               </div>
               <p class="text-xs text-base-content/60 mt-1">
                 {#if p.role === 'LEARNER-VICTIM'}
-                  {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
+                  {gradeSection(p.grade, p.section)}
                 {:else}
                   {personDetails(p)}
                 {/if}
@@ -731,7 +796,7 @@
                   <td class="break-words {lv || par || off ? 'font-semibold' : ''}">{fullName(p)}</td>
                   <td class="text-base-content/70 break-words">
                     {#if p.role === 'LEARNER-VICTIM'}
-                      {p.grade ? `Grade ${p.grade}` : ''}{p.section ? ` - ${p.section}` : ''}
+                      {gradeSection(p.grade, p.section)}
                     {:else}
                       {personDetails(p)}
                     {/if}
@@ -783,7 +848,7 @@
     </div>
 
     <!-- Incident Details -->
-    {#if sheet.detailed_incidents?.length || canEditSections}
+    {#if sheet.detailed_incidents?.length || canEditAll}
       <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
@@ -792,7 +857,7 @@
               <span class="badge badge-sm badge-primary badge-outline font-semibold">{sheet.detailed_incidents.length}</span>
             {/if}
           </div>
-          {#if canEditSections}
+          {#if canEditAll}
             <button class="btn btn-primary btn-xs gap-1 px-2.5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all" onclick={() => openAddChild('detailed-incidents')}>
               {@render plusIcon()}
               Add
@@ -813,7 +878,7 @@
                     <p class="text-xs text-base-content/35 mt-1">{editedBy(inc)}</p>
                   </div>
                 </div>
-                {#if canEditSections}
+                {#if canEditAll}
                   <div class="flex gap-1 shrink-0">
                     <button class="btn btn-circle btn-xs bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-primary-content hover:border-primary hover:scale-110 active:scale-95 transition-all" aria-label="Edit" title="Edit" onclick={() => openEditChild('detailed-incidents', inc)}>
                       {@render pencilIcon()}
@@ -881,6 +946,82 @@
           <p class="text-sm text-base-content/30">None added yet.</p>
         {/if}
       </div>
+    {/if}
+
+    <!-- Intervention Plan: uploaded any time; every version is kept -->
+    {#if files}
+      {#each files.attachments as att}
+        <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 class="font-semibold text-lg">{att.label}</h2>
+              <p class="text-xs text-base-content/50 mt-0.5">The separate sheet for the interventions planned for the learner. Upload a new version any time — earlier versions are kept.</p>
+            </div>
+            {#if files.can_upload && uploadKind !== att.kind}
+              <button class="btn btn-sm btn-primary ml-auto" onclick={() => startUpload(att.kind)}>{att.current ? 'Upload new version' : 'Upload'}</button>
+            {/if}
+          </div>
+
+          {#if uploadKind === att.kind}
+            <div class="mt-4 rounded-lg border border-base-300 bg-base-200/40 p-3 space-y-2">
+              <div class="form-control" data-field-wrap>
+                <label class="label py-1" for="att-file-{att.kind}"><span class="label-text text-xs">File * <span class="text-base-content/50">(PDF, DOC/DOCX, JPG or PNG · up to 10 MB)</span></span></label>
+                <input id="att-file-{att.kind}" bind:this={fileInput} type="file" class="file-input file-input-bordered file-input-sm w-full {uploadErrors.file ? 'file-input-error' : ''}"
+                  accept={files.accept.map((/** @type {string} */ x) => `.${x}`).join(',')} onchange={pickFile} />
+                {#if uploadErrors.file}<p class="text-xs text-error mt-1">{uploadErrors.file[0]}</p>{/if}
+              </div>
+              <div class="form-control">
+                <label class="label py-1" for="att-notes-{att.kind}"><span class="label-text text-xs">What changed in this version? (optional)</span></label>
+                <input id="att-notes-{att.kind}" type="text" maxlength="1000" class="input input-bordered input-sm w-full" placeholder="e.g. Revised after the case conference" bind:value={uploadNotes} />
+                {#if uploadErrors.notes}<p class="text-xs text-error mt-1">{uploadErrors.notes[0]}</p>{/if}
+              </div>
+              <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost btn-sm" onclick={() => (uploadKind = null)}>Cancel</button>
+                <button class="btn btn-primary btn-sm" disabled={uploading || !uploadFile} onclick={submitUpload}>{#if uploading}<span class="loading loading-spinner loading-xs"></span>{/if}Upload</button>
+              </div>
+            </div>
+          {/if}
+
+          {#if att.current}
+            {@const v = att.current}
+            <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5">
+              <div class="min-w-0">
+                <p class="text-sm font-medium break-words"><span class="badge badge-sm badge-primary mr-1.5">v{v.version} · current</span>{v.name}</p>
+                <p class="text-xs text-base-content/60 mt-0.5">{fmtSize(v.size)} · {v.uploaded_by?.full_name ?? '—'}{v.uploaded_by?.position ? ` (${v.uploaded_by.position})` : ''} · {fmtDateTime(v.created_at)}</p>
+                {#if v.notes}<p class="text-xs mt-0.5 break-words">“{v.notes}”</p>{/if}
+              </div>
+              <div class="flex gap-2 ml-auto">
+                <button class="btn btn-sm btn-primary" disabled={!v.viewable} title={v.viewable ? 'View in the page' : 'Word files can\'t be shown in the browser — download it instead'} onclick={() => viewVersion(v)}>View</button>
+                <button class="btn btn-sm btn-outline" onclick={() => downloadVersion(v)}>Download</button>
+              </div>
+            </div>
+          {:else if uploadKind !== att.kind}
+            <p class="text-sm text-base-content/40 mt-3">No intervention plan uploaded yet.</p>
+          {/if}
+
+          {#if att.previous.length}
+            <details class="mt-3">
+              <summary class="cursor-pointer text-sm font-medium select-none">Previous versions <span class="text-base-content/50 font-normal">({att.previous.length})</span></summary>
+              <ul class="mt-2 space-y-2">
+                {#each att.previous as v}
+                  <li class="flex flex-wrap items-center justify-between gap-2 border-l-2 border-base-300 pl-3 text-sm">
+                    <div class="min-w-0">
+                      <p class="break-words"><span class="badge badge-sm badge-ghost mr-1.5">v{v.version}</span>{v.name}</p>
+                      <p class="text-xs text-base-content/60">{fmtSize(v.size)} · {v.uploaded_by?.full_name ?? '—'} · {fmtDateTime(v.created_at)}</p>
+                      {#if v.notes}<p class="text-xs break-words">“{v.notes}”</p>{/if}
+                    </div>
+                    <div class="flex gap-1 ml-auto">
+                      {#if v.viewable}<button class="btn btn-xs btn-ghost border border-base-300" onclick={() => viewVersion(v)}>View</button>{/if}
+                      <button class="btn btn-xs btn-ghost border border-base-300" onclick={() => downloadVersion(v)}>Download</button>
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            </details>
+          {/if}
+          {#if fileError}<div class="alert alert-error text-sm mt-3"><span>{fileError}</span></div>{/if}
+        </div>
+      {/each}
     {/if}
 
     <!-- V. Recommendations / Next Steps: the Referral answer + other recommendations -->
@@ -960,6 +1101,50 @@
       {/if}
     </div>
 
+
+    <!-- Edit history: hidden until asked for -->
+    {#if sheet.history_count > 0}
+      <div class="card bg-base-100 shadow-sm border border-base-200 p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="font-semibold text-lg">Edit history</h2>
+            <p class="text-xs text-base-content/50 mt-0.5">Every change made after the record was finalized: who, when, and what changed.</p>
+          </div>
+          <button class="btn btn-sm btn-outline ml-auto" onclick={toggleHistory}>
+            {historyOpen ? 'Hide edit history' : `Show edit history (${sheet.history_count})`}
+          </button>
+        </div>
+        {#if historyOpen}
+          {#if historyLoading}
+            <div class="py-6 text-center"><span class="loading loading-spinner"></span></div>
+          {:else if historyError}
+            <div class="alert alert-error text-sm mt-3"><span>{historyError}</span></div>
+          {:else if revisions}
+            <ol class="mt-4 space-y-4">
+              {#each revisions as r}
+                <li class="border-l-2 border-primary/40 pl-3">
+                  <p class="text-sm"><span class="font-medium">{r.user?.full_name ?? '—'}</span>{r.user?.position ? ` (${r.user.position})` : ''}<span class="text-base-content/50">{' '}· {fmtDateTime(r.created_at)}</span></p>
+                  <ul class="mt-1.5 space-y-1.5">
+                    {#each r.changes as c}
+                      <li class="text-xs rounded-md bg-base-200/50 px-2.5 py-1.5">
+                        <p class="text-base-content/60">{c.section}{c.item ? ` › ${c.item}` : ''}{' '}· <span class="font-medium text-base-content">{c.field}</span></p>
+                        {#if c.field === 'Added'}
+                          <p class="mt-0.5 whitespace-pre-wrap break-words"><span class="text-success font-medium">+</span>{' '}{c.new}</p>
+                        {:else if c.field === 'Removed'}
+                          <p class="mt-0.5 whitespace-pre-wrap break-words text-base-content/60 line-through">{c.old}</p>
+                        {:else}
+                          <p class="mt-0.5 whitespace-pre-wrap break-words"><span class="text-base-content/50 line-through">{c.old || '(blank)'}</span>{' '}<span class="text-base-content/40">→</span>{' '}<span>{c.new || '(blank)'}</span></p>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                </li>
+              {/each}
+            </ol>
+          {/if}
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -1142,6 +1327,36 @@
         </button>
       </div>
     {/if}
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- View an Intervention Plan version in the page (PDF and images) -->
+<dialog bind:this={viewerDialog} class="modal" onclose={closeViewer}>
+  <div class="modal-box w-11/12 max-w-5xl h-[90vh] p-0 flex flex-col">
+    <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-base-200">
+      <div class="min-w-0">
+        <p class="font-semibold text-sm break-words">{viewing?.name ?? ''}</p>
+        {#if viewing}<p class="text-xs text-base-content/60">Version {viewing.version} · {viewing.uploaded_by?.full_name ?? '—'} · {fmtDateTime(viewing.created_at)}</p>{/if}
+      </div>
+      <div class="flex gap-2 shrink-0">
+        {#if viewing}<button class="btn btn-sm btn-outline" onclick={() => downloadVersion(viewing)}>Download</button>{/if}
+        <button class="btn btn-sm btn-ghost" onclick={() => viewerDialog?.close()}>Close</button>
+      </div>
+    </div>
+    <div class="flex-1 min-h-0 bg-base-200/50">
+      {#if viewLoading}
+        <div class="h-full flex items-center justify-center"><span class="loading loading-spinner loading-lg"></span></div>
+      {:else if viewError}
+        <div class="p-4"><div class="alert alert-error text-sm"><span>{viewError}</span></div></div>
+      {:else if viewUrl && viewing?.mime_type === 'application/pdf'}
+        <iframe src={viewUrl} title={viewing.name} class="w-full h-full border-0"></iframe>
+      {:else if viewUrl}
+        <div class="h-full overflow-auto flex items-start justify-center p-4">
+          <img src={viewUrl} alt={viewing?.name ?? 'Intervention plan'} class="max-w-full h-auto shadow" />
+        </div>
+      {/if}
+    </div>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>

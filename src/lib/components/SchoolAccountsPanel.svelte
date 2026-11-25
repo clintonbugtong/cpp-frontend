@@ -88,9 +88,45 @@
   const fmtDateTime = (iso) => iso ? new Date(iso).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'never';
 
   const past = $derived((data?.history ?? []).filter((/** @type {any} */ h) => !h.is_current));
+
+  // ── School Head without a system account (kept by Super Admin, Division
+  // Admin, or the school's own focal person). Printed on the forms when the
+  // School Head has no account. ──
+  /** @type {'new'|'edit'|'end'|null} */
+  let headMode = $state(null);
+  let headForm = $state({ full_name: '', designation: '', contact_number: '', started_at: '' });
+  let headEnd = $state({ ended_at: '', end_reason: '' });
+  /** @param {'new'|'edit'|'end'} mode */
+  function startHead(mode) {
+    headMode = mode; creating = null; closing = null; formError = ''; formErrors = {};
+    const r = data?.school_head_record;
+    headForm = mode === 'edit' && r
+      ? { full_name: r.full_name || '', designation: r.designation || '', contact_number: r.contact_number || '', started_at: r.started_at || today() }
+      : { full_name: '', designation: '', contact_number: '', started_at: today() };
+    headEnd = { ended_at: today(), end_reason: '' };
+  }
+  async function saveHead() {
+    /** @type {Record<string, string[]>} */
+    const missing = {};
+    if (headMode !== 'end' && !headForm.full_name.trim()) missing.full_name = ["Enter the School Head's full name."];
+    if (headMode === 'end' && !headEnd.end_reason.trim()) missing.end_reason = ['Say why (e.g. transferred, retired).'];
+    formErrors = missing;
+    if (Object.keys(missing).length) { formError = BANNER; return; }
+    saving = true; formError = '';
+    const r = data?.school_head_record;
+    const body = { full_name: headForm.full_name.trim(), designation: headForm.designation.trim() || undefined, contact_number: headForm.contact_number.trim() || undefined, started_at: headForm.started_at };
+    const res = headMode === 'new'
+      ? await schoolReportsService.recordSchoolHead({ school_id: data.school.school_id, ...body })
+      : headMode === 'edit'
+        ? await schoolReportsService.updateSchoolHead(r.school_personnel_id, body)
+        : await schoolReportsService.endSchoolHead(r.school_personnel_id, { ended_at: headEnd.ended_at, end_reason: headEnd.end_reason.trim() });
+    saving = false;
+    if (res.success) { headMode = null; onchange?.(res.data); }
+    else { formErrors = res.validationErrors || {}; formError = Object.keys(formErrors).length ? BANNER : res.error || 'Could not save the School Head.'; }
+  }
 </script>
 
-<div class="space-y-3" use:fieldErrors={{ errors: formErrors, key: creating ?? closing?.user_id }}>
+<div class="space-y-3" use:fieldErrors={{ errors: formErrors, key: creating ?? closing?.user_id ?? headMode }}>
   <div>
     <h3 class="font-semibold">School accounts</h3>
     <p class="text-xs text-base-content/60">Personal accounts in each holder's real name — one for the School Head / Principal and one for the Guidance Counselor / Designate. When someone moves out, their account is closed and kept on record.</p>
@@ -172,18 +208,79 @@
             </div>
           </div>
         {/if}
+
+        {#if p.key === 'school_head'}
+          <!-- School Head without a system account: used on the printed forms -->
+          {@const rec = data?.school_head_record}
+          <div class="mt-3 border-t border-base-200 pt-3">
+            {#if rec && headMode !== 'edit'}
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="font-medium">{rec.full_name} <span class="badge badge-sm badge-ghost align-middle">No account</span></p>
+                  <p class="text-xs text-base-content/60">{rec.designation || 'School Head'}{rec.contact_number ? ` · ${rec.contact_number}` : ''} · since {fmtDate(rec.started_at)}</p>
+                  <p class="text-xs text-base-content/50">Printed as the School Head on the Enhanced Intake Sheet and Incident Report.</p>
+                </div>
+                {#if data.can_record_school_head && !headMode}
+                  <div class="flex gap-1 shrink-0">
+                    <button class="btn btn-ghost btn-xs" onclick={() => startHead('edit')}>Edit</button>
+                    <button class="btn btn-ghost btn-xs text-error" onclick={() => startHead('end')}>Moved out…</button>
+                  </div>
+                {/if}
+              </div>
+            {:else if !rec && headMode !== 'new'}
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-xs text-base-content/60">No School Head recorded. If the School Head doesn't need an account, record them here so their name appears on the printed forms.</p>
+                {#if data.can_record_school_head}
+                  <button class="btn btn-outline btn-xs shrink-0" onclick={() => startHead('new')}>Record School Head</button>
+                {/if}
+              </div>
+            {/if}
+
+            {#if headMode === 'new' || headMode === 'edit'}
+              <div class="space-y-2 {rec && headMode === 'edit' ? '' : 'mt-1'}">
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <label class="form-control"><span class="label-text text-xs mb-1">Full name *</span><input class="input input-bordered input-sm" data-field="full_name" maxlength="200" bind:value={headForm.full_name} /></label>
+                  <label class="form-control"><span class="label-text text-xs mb-1">Designation</span><input class="input input-bordered input-sm" data-field="designation" maxlength="150" placeholder="e.g. Principal II" bind:value={headForm.designation} /></label>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <label class="form-control"><span class="label-text text-xs mb-1">Contact number</span><input class="input input-bordered input-sm" data-field="contact_number" maxlength="50" bind:value={headForm.contact_number} /></label>
+                  <label class="form-control"><span class="label-text text-xs mb-1">School Head since *</span><input type="date" class="input input-bordered input-sm" data-field="started_at" max={today()} bind:value={headForm.started_at} /></label>
+                </div>
+                {#if headMode === 'new' && rec}<p class="text-xs text-base-content/60">This replaces {rec.full_name}, who is kept in the history.</p>{/if}
+                {#if formError}<p class="text-xs text-error">{formError}</p>{/if}
+                <div class="flex justify-end gap-2">
+                  <button class="btn btn-ghost btn-xs" onclick={() => (headMode = null)}>Cancel</button>
+                  <button class="btn btn-primary btn-xs" disabled={saving} onclick={saveHead}>{#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}Save</button>
+                </div>
+              </div>
+            {:else if headMode === 'end' && rec}
+              <div class="mt-3 space-y-2">
+                <p class="text-xs text-base-content/70"><strong>{rec.full_name}</strong> is no longer the School Head. They stay in the history and on forms already printed.</p>
+                <div class="grid gap-2 sm:grid-cols-3">
+                  <label class="form-control"><span class="label-text text-xs mb-1">Last day</span><input type="date" class="input input-bordered input-sm" data-field="ended_at" max={today()} bind:value={headEnd.ended_at} /></label>
+                  <label class="form-control sm:col-span-2"><span class="label-text text-xs mb-1">Reason</span><input class="input input-bordered input-sm" data-field="end_reason" maxlength="255" placeholder="e.g. Transferred to another school, retired" bind:value={headEnd.end_reason} /></label>
+                </div>
+                {#if formError}<p class="text-xs text-error">{formError}</p>{/if}
+                <div class="flex justify-end gap-2">
+                  <button class="btn btn-ghost btn-xs" onclick={() => (headMode = null)}>Cancel</button>
+                  <button class="btn btn-error btn-xs" disabled={saving} onclick={saveHead}>{#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}Save</button>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
       {/if}
     </div>
   {/each}
 
   {#if past.length}
     <div>
-      <p class="text-xs font-semibold text-base-content/60 mb-1">Previous account holders</p>
+      <p class="text-xs font-semibold text-base-content/60 mb-1">Previous holders</p>
       <ul class="divide-y divide-base-200 rounded-lg border border-base-200">
         {#each past as h}
           <li class="px-3 py-2 text-sm">
             <p class="font-medium">{h.full_name} <span class="text-xs font-normal text-base-content/50">· {h.position}</span></p>
-            <p class="text-xs text-base-content/60">{fmtDate(h.started_at)} – {fmtDate(h.ended_at)}{h.end_reason ? ` · ${h.end_reason}` : ''}{h.username ? ` · ${h.username} (closed)` : ''}</p>
+            <p class="text-xs text-base-content/60">{fmtDate(h.started_at)} – {fmtDate(h.ended_at)}{h.end_reason ? ` · ${h.end_reason}` : ''}{h.username ? ` · ${h.username} (closed)` : ' · no account'}</p>
           </li>
         {/each}
       </ul>

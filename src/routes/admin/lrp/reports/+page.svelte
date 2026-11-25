@@ -1,4 +1,5 @@
 <script>
+  import Pagination from '$lib/components/Pagination.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
@@ -16,9 +17,12 @@
   // (?status=new) the same way the intake sheets list handles ?status=draft.
   let statusFilter = $state(page.url.searchParams.get('status') || '');
   let natureFilter = $state('');
+  /** '' = newest received first, 'oldest', or 'needs_action' */
+  let sortBy = $state('');
   let divisionFilter = $state('');
   let currentPage = $state(1);
   let totalPages = $state(1);
+  let totalCount = $state(0);
   let total = $state(0);
 
   const isRegional = authState.user?.organizationLevel === 'regional';
@@ -45,12 +49,14 @@
     const params = { page: currentPage, per_page: 15 };
     if (statusFilter) params.status = statusFilter;
     if (natureFilter) params.nature_of_concern = natureFilter;
+    if (sortBy) params.sort = sortBy;
     if (divisionFilter) params.division_id = divisionFilter;
 
     const result = await learnerReportsService.getReports(params);
     if (result.success) {
       reports = result.data?.data || [];
       totalPages = result.data?.last_page || 1;
+      totalCount = result.data?.total ?? 0;
       total = result.data?.total || 0;
     } else {
       error = result.error || 'Failed to load reports';
@@ -112,6 +118,11 @@
         <option value={opt.value}>{opt.label}</option>
       {/each}
     </select>
+    <select class="select select-bordered w-full sm:w-56" aria-label="Sort" bind:value={sortBy} onchange={handleFilterChange}>
+      <option value="">Sort: Newest received</option>
+      <option value="oldest">Sort: Oldest received</option>
+      <option value="needs_action">Sort: Needs action first</option>
+    </select>
     {#if isRegional && divisions.length}
       <select class="select select-bordered w-full sm:w-56" bind:value={divisionFilter} onchange={handleFilterChange}>
         <option value="">All Divisions</option>
@@ -145,6 +156,7 @@
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
+              <span class="badge badge-sm badge-accent badge-outline font-mono whitespace-nowrap mb-1">RPT-{String(r.learner_report_id).padStart(5, '0')}</span>
               <p class="font-medium break-words min-w-0">{r.is_anonymous ? 'Anonymous' : r.reporter_full_name}</p>
               <p class="text-xs text-base-content/50">{relationshipLabel(r.reporter_relationship)}</p>
             </div>
@@ -153,7 +165,7 @@
           <div class="mt-2 text-sm text-base-content/70 break-words">{r.school?.name || '—'}</div>
           {#if isRegional}<div class="text-xs text-base-content/50 break-words">{r.division?.name || '—'}</div>{/if}
           <div class="mt-2 flex items-center justify-between gap-2">
-            <span class="badge badge-sm badge-ghost">{natureOfConcernLabel(r.nature_of_concern)}</span>
+            <span class="badge badge-sm badge-ghost h-auto whitespace-normal text-left">{natureOfConcernLabel(r.nature_of_concern)}{(r.nature_of_concern === 'NON_BULLYING' || r.nature_of_concern === 'OTHERS') && r.nature_of_concern_other ? `: ${r.nature_of_concern_other}` : ''}</span>
             <span class="text-xs text-base-content/50">{fmtDate(r.created_at)}</span>
           </div>
         </button>
@@ -166,6 +178,7 @@
         <table class="table">
           <thead>
             <tr>
+              <th class="whitespace-nowrap">Report No.</th>
               <th>Reporter</th>
               <th>School</th>
               {#if isRegional}<th>Division</th>{/if}
@@ -178,6 +191,7 @@
           <tbody>
             {#each reports as r}
               <tr class="hover cursor-pointer" onclick={() => goto(`/admin/lrp/reports/${r.learner_report_id}`)}>
+                <td><span class="badge badge-sm badge-accent badge-outline font-mono whitespace-nowrap">RPT-{String(r.learner_report_id).padStart(5, '0')}</span></td>
                 <td>
                   <p class="font-medium">{r.is_anonymous ? 'Anonymous' : r.reporter_full_name}</p>
                   <p class="text-xs text-base-content/50">{relationshipLabel(r.reporter_relationship)}</p>
@@ -185,7 +199,7 @@
                 <td class="text-sm">{r.school?.name || '—'}</td>
                 {#if isRegional}<td class="text-sm text-base-content/70">{r.division?.name || '—'}</td>{/if}
                 <td class="text-sm">
-                  <span class="badge badge-sm badge-ghost">{natureOfConcernLabel(r.nature_of_concern)}</span>
+                  <span class="badge badge-sm badge-ghost h-auto whitespace-normal text-left">{natureOfConcernLabel(r.nature_of_concern)}{(r.nature_of_concern === 'NON_BULLYING' || r.nature_of_concern === 'OTHERS') && r.nature_of_concern_other ? `: ${r.nature_of_concern_other}` : ''}</span>
                 </td>
                 <td class="text-sm">{fmtDate(r.created_at)}</td>
                 <td>
@@ -202,16 +216,5 @@
     </div>
   {/if}
 
-  {#if totalPages > 1}
-    <div class="card bg-base-100 shadow-sm border border-base-200 p-4 flex flex-row items-center justify-between">
-      <span class="text-sm text-base-content/50">Page {currentPage} of {totalPages}</span>
-      <div class="join">
-        <button class="join-item btn btn-sm" disabled={currentPage <= 1} onclick={() => changePage(currentPage - 1)}>«</button>
-        {#each Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1) as p}
-          <button class="join-item btn btn-sm {p === currentPage ? 'btn-active' : ''}" onclick={() => changePage(p)}>{p}</button>
-        {/each}
-        <button class="join-item btn btn-sm" disabled={currentPage >= totalPages} onclick={() => changePage(currentPage + 1)}>»</button>
-      </div>
-    </div>
-  {/if}
+  <Pagination page={currentPage} pages={totalPages} total={totalCount} noun="reports" onchange={changePage} />
 </div>

@@ -117,9 +117,8 @@
       </div>
 
       <!-- System name -->
-      <h1 class="text-white font-bold text-base leading-snug">
-        Learner Rights<br>&amp; Protection
-      </h1>
+      <h1 class="text-white font-bold text-xl leading-tight tracking-tight">LRP-IRIS</h1>
+      <p class="text-white/90 text-xs leading-snug mt-1">Learner Rights Protection –<br>Incident Reporting Information System</p>
       <p class="text-cyan-50/80 text-xs mt-1.5 tracking-wide">Department of Education</p>
       <p class="text-cyan-50/60 text-xs tracking-wider">Cordillera Administrative Region</p>
 

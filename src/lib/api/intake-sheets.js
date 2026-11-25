@@ -41,6 +41,70 @@ class IntakeSheetsService {
 		}
 	}
 
+	/**
+	 * Saved edits of a finalized sheet (who, when, what changed), latest first.
+	 * @param {string|number} id
+	 */
+	async getHistory(id) {
+		try {
+			const response = await api.get(`/intake-sheets/${id}/history`);
+			return { success: true, data: response };
+		} catch (e) {
+			return { success: false, error: /** @type {Error} */ (e).message };
+		}
+	}
+
+	/**
+	 * Intervention Plan (and other files): current version + earlier versions.
+	 * @param {string|number} id
+	 */
+	async getAttachments(id) {
+		try {
+			return { success: true, data: await api.get(`/intake-sheets/${id}/attachments`) };
+		} catch (e) {
+			return { success: false, error: /** @type {Error} */ (e).message };
+		}
+	}
+
+	/**
+	 * Upload a new version (earlier versions are kept).
+	 * @param {string|number} id @param {string} kind @param {File} file @param {string} [notes]
+	 */
+	async uploadAttachment(id, kind, file, notes = '') {
+		const form = new FormData();
+		form.append('kind', kind);
+		form.append('file', file);
+		if (notes.trim()) form.append('notes', notes.trim());
+		try {
+			return { success: true, data: await api.upload(`/intake-sheets/${id}/attachments`, form) };
+		} catch (e) {
+			const err = /** @type {any} */ (e);
+			return { success: false, error: err.message, validationErrors: err.validationErrors };
+		}
+	}
+
+	/**
+	 * The file as a Blob, for viewing it in the page (PDF and images).
+	 * @param {string|number} id @param {string|number} attachmentId
+	 */
+	async viewAttachment(id, attachmentId) {
+		try {
+			return { success: true, data: await api.blob(`/intake-sheets/${id}/attachments/${attachmentId}/download`, { inline: 1 }) };
+		} catch (e) {
+			return { success: false, error: /** @type {Error} */ (e).message };
+		}
+	}
+
+	/** @param {string|number} id @param {string|number} attachmentId @param {string} name */
+	async downloadAttachment(id, attachmentId, name) {
+		try {
+			await api.download(`/intake-sheets/${id}/attachments/${attachmentId}/download`, {}, name);
+			return { success: true };
+		} catch (e) {
+			return { success: false, error: /** @type {Error} */ (e).message };
+		}
+	}
+
 	async createIntakeSheet(data) {
 		try {
 			const response = await api.post('/intake-sheets', data);

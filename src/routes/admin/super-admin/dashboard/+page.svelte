@@ -187,7 +187,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-px bg-base-200 rounded-xl overflow-hidden">
           <button type="button" class="bg-base-100 hover:bg-base-200 transition-colors px-4 py-4 text-center cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets')}>
             <p class="text-2xl font-bold tabular-nums">{lrp.summary?.total ?? 0}</p>
-            <p class="text-xs text-base-content/40 mt-0.5">Total Sheets</p>
+            <p class="text-xs text-base-content/40 mt-0.5">Total Cases</p>
           </button>
           <button type="button" class="bg-base-100 hover:bg-base-200 transition-colors px-4 py-4 text-center cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets?status=pending_review')}>
             <p class="text-2xl font-bold tabular-nums text-warning">{lrp.summary?.pending_review ?? 0}</p>

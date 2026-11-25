@@ -1,6 +1,7 @@
 // Keep in sync with IntakeSheet::NATURE_OF_CASE_OPTIONS on the backend.
 export const NATURE_OF_CASE_OPTIONS = [
 	{ value: 'BULLYING', label: 'Bullying' },
+	{ value: 'NON_BULLYING', label: 'Non-bullying' },
 	{ value: 'CHILD_ABUSE', label: 'Child Abuse' },
 	{ value: 'PHYSICAL_ABUSE', label: 'Physical Abuse' },
 	{ value: 'SEXUAL_ABUSE_HARASSMENT', label: 'Sexual Abuse / Harassment' },
@@ -8,6 +9,14 @@ export const NATURE_OF_CASE_OPTIONS = [
 	{ value: 'NEGLECT', label: 'Neglect' },
 	{ value: 'OTHERS', label: 'Others' }
 ];
+
+/** Categories that need the "please specify" text (kept in nature_of_case_other). */
+export const NATURE_NEEDS_SPECIFY = ['NON_BULLYING', 'OTHERS'];
+
+/** @param {string|null|undefined} value */
+export function needsSpecify(value) {
+	return !!value && NATURE_NEEDS_SPECIFY.includes(value);
+}
 
 /** @param {string|null|undefined} value */
 export function natureOfCaseLabel(value) {

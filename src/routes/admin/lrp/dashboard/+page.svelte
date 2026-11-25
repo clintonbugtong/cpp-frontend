@@ -8,6 +8,8 @@
   import { natureOfCaseLabel } from '$lib/constants/intake-sheets.js';
   import { natureOfConcernLabel, relationshipLabel } from '$lib/constants/learner-reports.js';
   import TrendLineChart from '$lib/components/TrendLineChart.svelte';
+  import PeriodPicker from '$lib/components/PeriodPicker.svelte';
+  import { phNow, schoolReportsService } from '$lib/api/school-reports.js';
 
   let loading = $state(true);
   let error = $state('');
@@ -17,9 +19,17 @@
   let reportStats = $state(null);
 
   const isRegional = authState.user?.organizationLevel === 'regional';
+  const isSchool = authState.user?.organizationLevel === 'school';
   /** @type {any[]} */
   let divisions = $state([]);
   let divisionFilter = $state('');
+
+  // Period (like the Incident Summary): all time by default.
+  const nowPH = phNow();
+  let periodType = $state('all');
+  let periodYear = $state(nowPH.year);
+  let periodMonth = $state(nowPH.month);
+  let periodQuarter = $state(nowPH.quarter);
 
   onMount(async () => {
     if (isRegional) {
@@ -33,12 +43,31 @@
     await load();
   });
 
+  // School accounts: this month's zero incident report status.
+  /** @type {any} */
+  let thisMonth = $state(null);
+  /** Past months with nothing recorded and no zero report yet. @type {any[]} */
+  let overdueMonths = $state([]);
+  async function loadThisMonth() {
+    if (!isSchool) return;
+    const res = await schoolReportsService.getMine();
+    thisMonth = res.success ? (res.data?.current ?? null) : null;
+    overdueMonths = res.success ? (res.data?.overdue ?? []) : [];
+  }
+
   async function load() {
+    loadThisMonth();
     loading = true;
     error = '';
     /** @type {Record<string,any>} */
     const params = {};
     if (divisionFilter) params.division_id = divisionFilter;
+    if (periodType !== 'all') {
+      params.period_type = periodType;
+      params.year = periodYear;
+      if (periodType === 'monthly') params.month = periodMonth;
+      if (periodType === 'quarterly') params.quarter = periodQuarter;
+    }
 
     const [sheetsRes, reportsRes] = await Promise.all([
       intakeSheetsService.getStatistics(params),
@@ -107,9 +136,10 @@
     <div>
       <p class="text-xs text-base-content/40 uppercase tracking-wider mb-0.5">Dashboard</p>
       <h1 class="text-2xl font-bold">{authState.user?.fullName || 'Focal Person'}</h1>
-      <p class="text-sm text-base-content/50 mt-0.5">Learner Rights &amp; Protection</p>
+      <p class="text-sm text-base-content/50 mt-0.5">Learner Rights &amp; Protection{#if data?.period && data.period.type !== 'all'} · <span class="font-medium text-base-content/70">{data.period.label}</span>{/if}</p>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center justify-end gap-2">
+      <PeriodPicker bind:type={periodType} bind:year={periodYear} bind:month={periodMonth} bind:quarter={periodQuarter} onchange={load} />
       {#if isRegional && divisions.length}
         <select class="select select-bordered select-sm w-full sm:w-48" bind:value={divisionFilter} onchange={handleFilterChange}>
           <option value="">All Divisions</option>
@@ -150,6 +180,44 @@
     </div>
 
   {:else if data}
+    {#if isSchool && thisMonth}
+      <!-- This month's report (school accounts) -->
+      {@const needs = thisMonth.status === 'no_report'}
+      <div class="rounded-2xl border p-4 flex flex-wrap items-center justify-between gap-3 {needs ? 'border-error/30 bg-error/5' : thisMonth.status === 'zero_incident' ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/10'}">
+        <div class="flex items-start gap-3 min-w-0">
+          <span class="grid place-items-center w-10 h-10 rounded-xl shrink-0 {needs ? 'bg-error/15 text-error' : thisMonth.status === 'zero_incident' ? 'bg-success/15 text-success' : 'bg-warning/25 text-warning-content'}">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
+          </span>
+          <div class="min-w-0">
+            <p class="text-xs uppercase tracking-wide text-base-content/50">This month's report · {thisMonth.period_label}</p>
+            {#if needs}
+              <p class="font-semibold">Not yet reported</p>
+              <p class="text-xs text-base-content/70">If no learner rights or protection incident happened this month, report zero incident.</p>
+            {:else if thisMonth.status === 'zero_incident'}
+              <p class="font-semibold">Zero incident report filed</p>
+              <p class="text-xs text-base-content/70">You can update it until the month ends.</p>
+            {:else}
+              <p class="font-semibold">{thisMonth.incident_count} incident{thisMonth.incident_count === 1 ? '' : 's'} recorded — reported automatically</p>
+              <p class="text-xs text-base-content/70">Months with recorded incidents don't need a zero incident report.</p>
+            {/if}
+          </div>
+        </div>
+        <div class="flex gap-2 ml-auto">
+          {#if needs || thisMonth.status === 'zero_incident'}
+            <button class="btn btn-sm {needs ? 'btn-success' : 'btn-outline'}" onclick={() => goto('/admin/lrp/school-report?file=current')}>
+              {needs ? 'Report zero incident' : 'Update zero incident report'}
+            </button>
+          {/if}
+          <button class="btn btn-sm btn-ghost border border-base-300" onclick={() => goto('/admin/lrp/school-report?file=pick')}>Report zero incident for another month</button>
+        </div>
+        {#if overdueMonths.length}
+          <div class="w-full flex flex-wrap items-center justify-between gap-2 border-t border-base-content/10 pt-3">
+            <p class="text-sm"><span class="font-semibold text-error">{overdueMonths.length} past month{overdueMonths.length === 1 ? '' : 's'}</span> with no report: {overdueMonths.map((/** @type {any} */ m) => m.period_label).join(', ')}</p>
+            <button class="btn btn-sm btn-outline btn-error" onclick={() => goto('/admin/lrp/school-report')}>Report past months</button>
+          </div>
+        {/if}
+      </div>
+    {/if}
     {#if (data.summary?.drafts ?? 0) > 0}
       <button
         type="button"
@@ -191,7 +259,7 @@
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <button type="button" class="{SHEET_CARD} hover:shadow-sm transition-shadow text-left w-full cursor-pointer" onclick={() => goto('/admin/lrp/intake-sheets')}>
         <div class="flex items-center justify-between mb-3">
-          <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Total Sheets</span>
+          <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Total Cases</span>
           <span class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-primary">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
@@ -270,20 +338,48 @@
         {/if}
       </div>
 
+      <!-- Learner-victims and respondents, counted separately -->
       <div class={SHEET_CARD}>
-        <h2 class="text-sm font-semibold mb-4">Learner-Victims by Sex</h2>
-        {#if data.by_sex?.length}
-          {@const totalSex = data.by_sex.reduce((s, r) => s + r.count, 0)}
-          <div class="space-y-3">
-            {#each data.by_sex as row}
-              <div class="flex items-center gap-3">
-                <span class="badge badge-sm {row.sex === 'MALE' ? 'badge-info' : row.sex === 'FEMALE' ? 'badge-secondary' : 'badge-ghost'} shrink-0 w-20 justify-center">{sexLabel(row.sex)}</span>
-                <div class="flex-1 bg-base-200 rounded-full h-2 overflow-hidden">
-                  <div class="bg-info h-full rounded-full transition-all duration-500" style="width:{pct(row.count, totalSex)}%"></div>
-                </div>
-                <span class="text-sm font-bold tabular-nums w-6 text-right">{row.count}</span>
+        <h2 class="text-sm font-semibold mb-4">Learner-Victims and Respondents</h2>
+        {#if data.people && (data.people.victims.total || data.people.respondents.total || data.people.respondents.unidentified_cases)}
+          {@const v = data.people.victims}
+          {@const r = data.people.respondents}
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div>
+              <p class="text-xs font-semibold text-primary mb-2">Learner-victims <span class="text-base-content/50 font-normal">({v.total})</span></p>
+              <div class="space-y-2">
+                {#each [['Female', v.female, 'bg-secondary'], ['Male', v.male, 'bg-info'], ['Not recorded', v.not_recorded, 'bg-base-300']] as [label, n, bar]}
+                  {#if n || label !== 'Not recorded'}
+                    <div class="flex items-center gap-2 text-xs">
+                      <span class="w-20 shrink-0 text-base-content/70">{label}</span>
+                      <div class="flex-1 bg-base-200 rounded-full h-2 overflow-hidden"><div class="{bar} h-full rounded-full" style="width:{pct(Number(n), v.total)}%"></div></div>
+                      <span class="w-6 text-right font-bold tabular-nums">{n}</span>
+                    </div>
+                  {/if}
+                {/each}
               </div>
-            {/each}
+              {#if v.cases_without}<p class="text-[11px] text-base-content/50 mt-2">{v.cases_without} case{v.cases_without === 1 ? '' : 's'} with no learner-victim (Non-bullying)</p>{/if}
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-error mb-2">Respondents <span class="text-base-content/50 font-normal">({r.total})</span></p>
+              <div class="space-y-2">
+                {#each [['Female', r.female, 'bg-secondary'], ['Male', r.male, 'bg-info'], ['Not recorded', r.not_recorded, 'bg-base-300']] as [label, n, bar]}
+                  {#if n || label !== 'Not recorded'}
+                    <div class="flex items-center gap-2 text-xs">
+                      <span class="w-20 shrink-0 text-base-content/70">{label}</span>
+                      <div class="flex-1 bg-base-200 rounded-full h-2 overflow-hidden"><div class="{bar} h-full rounded-full" style="width:{pct(Number(n), r.total)}%"></div></div>
+                      <span class="w-6 text-right font-bold tabular-nums">{n}</span>
+                    </div>
+                  {/if}
+                {/each}
+              </div>
+              <div class="flex flex-wrap gap-1.5 mt-3">
+                <span class="badge badge-sm badge-ghost">School personnel: {r.school_personnel}</span>
+                <span class="badge badge-sm badge-ghost">Student: {r.student}</span>
+                <span class="badge badge-sm badge-ghost">Other: {r.other}</span>
+                {#if r.unidentified_cases}<span class="badge badge-sm badge-warning badge-soft">Not yet identified: {r.unidentified_cases}</span>{/if}
+              </div>
+            </div>
           </div>
         {:else}
           <p class="text-sm text-base-content/30 text-center py-4">No data</p>
@@ -312,22 +408,54 @@
         </div>
       {/if}
 
-      <div class={SHEET_CARD}>
-        <h2 class="text-sm font-semibold mb-4">Schools with the Most Cases</h2>
-        {#if data.by_school?.length}
-          <div class="space-y-3">
-            {#each data.by_school as row, i}
-              <div class="flex items-center gap-3">
-                <span class="text-xs font-bold text-base-content/20 w-4 text-center tabular-nums">{i + 1}</span>
-                <span class="text-sm flex-1 line-clamp-2 break-words min-w-0 leading-tight" title={row.name}>{row.name}</span>
-                <span class="text-xs font-bold tabular-nums bg-base-200 px-2 py-0.5 rounded-full">{row.count}</span>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <p class="text-sm text-base-content/30 text-center py-4">No data</p>
-        {/if}
-      </div>
+      {#if isSchool}
+        <!-- School accounts: their own school only, so cases by grade level instead -->
+        <div class={SHEET_CARD}>
+          <h2 class="text-sm font-semibold mb-1">Cases by Grade Level</h2>
+          <p class="text-xs text-base-content/50 mb-4">Learner-victims, student respondents and learner reports, with the sections that have the most.</p>
+          {#if data.by_grade?.length}
+            {@const maxGrade = Math.max(1, ...data.by_grade.map((/** @type {any} */ g) => g.count))}
+            <div class="space-y-3">
+              {#each data.by_grade as g}
+                <div>
+                  <div class="flex justify-between items-baseline mb-1 gap-2">
+                    <span class="text-xs font-medium {g.grade ? '' : 'text-base-content/50 italic'}">{g.label}</span>
+                    <span class="text-xs font-bold shrink-0 tabular-nums">{g.count}</span>
+                  </div>
+                  <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-primary h-full rounded-full transition-all duration-500" style="width:{(g.count / maxGrade) * 100}%"></div>
+                  </div>
+                  <p class="text-[11px] text-base-content/60 mt-1">
+                    {[g.victims ? `${g.victims} learner-victim${g.victims === 1 ? '' : 's'}` : '', g.respondents ? `${g.respondents} student respondent${g.respondents === 1 ? '' : 's'}` : '', g.reports ? `${g.reports} learner report${g.reports === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')}
+                  </p>
+                  {#if g.sections?.length}
+                    <p class="text-[11px] text-base-content/50 break-words">Sections: {g.sections.map((/** @type {any} */ sec) => `${sec.name} (${sec.count})`).join(' · ')}</p>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-sm text-base-content/30 text-center py-4">No data</p>
+          {/if}
+        </div>
+      {:else}
+        <div class={SHEET_CARD}>
+          <h2 class="text-sm font-semibold mb-4">Schools with the Most Cases</h2>
+          {#if data.by_school?.length}
+            <div class="space-y-3">
+              {#each data.by_school as row, i}
+                <div class="flex items-center gap-3">
+                  <span class="text-xs font-bold text-base-content/20 w-4 text-center tabular-nums">{i + 1}</span>
+                  <span class="text-sm flex-1 line-clamp-2 break-words min-w-0 leading-tight" title={row.name}>{row.name}</span>
+                  <span class="text-xs font-bold tabular-nums bg-base-200 px-2 py-0.5 rounded-full">{row.count}</span>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-sm text-base-content/30 text-center py-4">No data</p>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -427,7 +555,7 @@
         <div class="flex items-center justify-between mb-1">
           <h2 class="text-sm font-semibold">Monthly Volume</h2>
         </div>
-        <p class="text-xs text-base-content/30 mb-4">Past 6 months</p>
+        <p class="text-xs text-base-content/30 mb-4">{data?.period && data.period.type !== 'all' ? `6 months up to ${data.monthly_trend?.[data.monthly_trend.length - 1]?.label ?? ''}` : 'Past 6 months'}</p>
         <TrendLineChart
           months={trendMonths.map((m) => ({ label: m.label }))}
           series={[
